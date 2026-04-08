@@ -26,6 +26,10 @@
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
 
+        .header-tabela { border-bottom: 2px solid #1a73e8; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .header-tabela h2 { margin: 0; }
+        .contador-linhas { font-size: 16px; color: #666; font-weight: normal; background: #e8eaed; padding: 5px 12px; border-radius: 15px; }
+
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th { background-color: #f1f3f4; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #5f6368; }
         td { padding: 12px; border-bottom: 1px solid #ddd; }
@@ -80,7 +84,11 @@
             </div>
         </div>
 
-        <h2 style="border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">📋 Anexo J - Quadro 9.2.A</h2>
+        <div class="header-tabela">
+            <h2>📋 Anexo J - Quadro 9.2.A</h2>
+            <span id="contador-linhas" class="contador-linhas">0 linhas</span>
+        </div>
+        
         <div style="overflow-x: auto;">
             <table id="irs-table">
                 <thead>
@@ -447,6 +455,9 @@
             tbody.appendChild(tr);
         });
 
+        // NOVO: Atualiza o contador de linhas visível!
+        document.getElementById('contador-linhas').innerText = `${linhas.length} ${linhas.length === 1 ? 'linha' : 'linhas'}`;
+
         if (!isModoAgrupado) {
             const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0;
             document.getElementById('resumo-total').textContent = `€ ${balancoTotal.toFixed(2)}`;
@@ -490,26 +501,20 @@
         });
     }
 
-    // NOVO: Função para Descarregar a tabela como Ficheiro CSV (Compatível com Excel)
     function exportarExcel() {
         const table = document.getElementById('irs-table');
-        // O \uFEFF é um código (BOM) que avisa o Excel que o ficheiro tem acentos e caracteres especiais
         let csvContent = "\uFEFF"; 
         
         for (let i = 0; i < table.rows.length; i++) {
             let row = table.rows[i];
             let rowData = [];
             for (let j = 0; j < row.cells.length; j++) {
-                // Limpa quebras de linha e texto dos alertas
                 let cellText = row.cells[j].innerText.replace(/\n/g, ' ').replace(/"/g, '""').trim();
-                // Rodeia com aspas para proteger os dados
                 rowData.push('"' + cellText + '"'); 
             }
-            // Em Portugal, o Excel usa Ponto e Vírgula (;) para separar colunas!
             csvContent += rowData.join(";") + "\n"; 
         }
 
-        // Cria o ficheiro invisível e faz o download
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
