@@ -19,21 +19,25 @@
         .btn-calcular:hover { background: #1557b0; }
         
         /* Resumo Fiscal */
-        .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 20px; }
+        .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .resumo-box { text-align: center; }
         .resumo-valor { font-size: 24px; font-weight: bold; margin-top: 5px; }
         .valor-positivo { color: #4ade80; }
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
 
-        /* Estilos da Tabela do IRS (Cores Colab) */
+        /* Estilos da Tabela do IRS */
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th { background-color: #f1f3f4; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #5f6368; }
         td { padding: 12px; border-bottom: 1px solid #ddd; }
         .row-lucro { background-color: #d4edda !important; }
         .row-prejuizo { background-color: #f8d7da !important; }
-        .alerta-correcao { color: #d93025; font-weight: bold; font-size: 12px; display: block; margin-top: 4px; }
-        .hidden { display: none; }
+        
+        /* ALERTAS VERMELHOS E TOOLTIP */
+        .alerta-vermelho { color: #d93025; font-weight: bold; cursor: help; text-decoration: underline dotted; }
+        .alerta-staking { color: #1a73e8; font-size: 11px; display: block; font-weight: normal; cursor: help; }
+        
+        .hidden { display: none !important; }
     </style>
 </head>
 <body>
@@ -56,24 +60,22 @@
     </div>
 
     <div id="irs-report-container" class="hidden">
-        
         <div class="resumo-fiscal">
             <div class="resumo-box">
-                <div>Balanço Total (Lucro/Prejuízo)</div>
+                <div>Balanço Total</div>
                 <div id="resumo-total" class="resumo-valor">€ 0.00</div>
             </div>
             <div class="resumo-box">
-                <div>Lucro Tributável (< 365 dias)</div>
+                <div>Lucro Tributável (< 1 ano)</div>
                 <div id="resumo-tributavel" class="resumo-valor">€ 0.00</div>
             </div>
             <div class="resumo-box">
-                <div>Imposto Estimado a Pagar (28%)</div>
+                <div>Imposto Estimado (28%)</div>
                 <div id="resumo-imposto" class="resumo-valor valor-imposto">€ 0.00</div>
             </div>
         </div>
 
         <h2 style="border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">📋 Anexo J - Quadro 9.2.A</h2>
-        <p>Copie estas linhas diretamente para o Portal das Finanças:</p>
         <div style="overflow-x: auto;">
             <table id="irs-table">
                 <thead>
@@ -96,7 +98,6 @@
 
 <script>
     let dadosGlobais = [];
-
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 
@@ -190,21 +191,23 @@
 
                     if (time.getFullYear() === anoIrsDesejado) {
                         let dataAquisicaoReal = oldestDate ? oldestDate : time;
-                        let valAquisicao = costBasis.toFixed(2);
-                        let alertaCusto = "";
+                        let valAquisicaoHtml = costBasis.toFixed(2);
+                        let alertaHtml = "";
 
+                        // LÓGICA DE ALERTAS COLORIDOS E TOOLTIPS
                         if (costBasis < 0.01 && origens.has("Depósito Externo")) {
-                            alertaCusto = `<span class="alerta-correcao">⚠️ CORRIGIR: Inserir dados externos</span>`;
-                            valAquisicao = "0.00";
+                            const tipTexto = "Este valor é 0.00 porque esta moeda veio de fora da Kraken (ex: Binance ou Ledger). Deve procurar o preço que pagou na altura e alterar manualmente no IRS.";
+                            valAquisicaoHtml = `<span class="alerta-vermelho" title="${tipTexto}">0.00</span>`;
+                            alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR (Info)</span>`;
                         } else if (costBasis < 0.01 && origens.has("Staking")) {
-                            alertaCusto = `<span style="font-size:11px; color:#1a73e8; display:block;">(OK: Staking)</span>`;
+                            alertaHtml = `<span class="alerta-staking" title="Esta moeda foi ganha em Staking/Rewards. O custo de aquisição é 0.00 por lei.">✅ Staking (Custo 0)</span>`;
                         }
 
                         relatorioIRS.push({
                             realizacaoMesAno: formatarData(time),
                             realizacaoVal: grossEur.toFixed(2),
                             aquisicaoMesAno: formatarData(dataAquisicaoReal),
-                            aquisicaoValHtml: valAquisicao + alertaCusto,
+                            aquisicaoValHtml: valAquisicaoHtml + alertaHtml,
                             despesas: feeEur.toFixed(2),
                             moeda: asset,
                             lucro: grossEur - costBasis - feeEur,
@@ -267,52 +270,45 @@
         tbody.innerHTML = '';
         
         let balancoTotal = 0;
-        let balancoTributavel = 0; // Para a regra dos 365 dias
+        let balancoTributavel = 0;
         const msPorDia = 1000 * 60 * 60 * 24;
 
-        if (linhas.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 20px;">Não foram encontradas vendas em ${ano}.</td></tr>`;
-        } else {
-            linhas.forEach(linha => {
-                // 1. Soma para o balanço geral
-                balancoTotal += linha.lucro;
+        linhas.forEach(linha => {
+            balancoTotal += linha.lucro;
+            const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
+            if (diasDetidos < 365) {
+                balancoTributavel += linha.lucro;
+            }
 
-                // 2. Verifica a isenção de 365 dias para o cálculo tributável
-                const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
-                if (diasDetidos < 365) {
-                    balancoTributavel += linha.lucro;
-                }
+            const tr = document.createElement('tr');
+            tr.className = linha.lucro > 0 ? 'row-lucro' : 'row-prejuizo';
+            tr.innerHTML = `
+                <td><b>G20</b></td>
+                <td>840</td>
+                <td>${linha.realizacaoMesAno}</td>
+                <td><b>${linha.realizacaoVal}</b></td>
+                <td>${linha.aquisicaoMesAno}</td>
+                <td>${linha.aquisicaoValHtml}</td>
+                <td>${linha.despesas}</td>
+                <td>${linha.moeda}</td>
+            `;
+            tbody.appendChild(tr);
+        });
 
-                // 3. Desenha a linha e aplica as cores
-                const tr = document.createElement('tr');
-                tr.className = linha.lucro > 0 ? 'row-lucro' : 'row-prejuizo';
-                tr.innerHTML = `
-                    <td><b>G20</b></td>
-                    <td>840</td>
-                    <td>${linha.realizacaoMesAno}</td>
-                    <td><b>${linha.realizacaoVal}</b></td>
-                    <td>${linha.aquisicaoMesAno}</td>
-                    <td>${linha.aquisicaoValHtml}</td>
-                    <td>${linha.despesas}</td>
-                    <td>${linha.moeda}</td>
-                `;
-                tbody.appendChild(tr);
-            });
-        }
-
-        // Atualiza os painéis de resumo
-        const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0; // Taxa Autónoma de 28%
+        const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0;
         
-        const elTotal = document.getElementById('resumo-total');
-        elTotal.textContent = `€ ${balancoTotal.toFixed(2)}`;
-        elTotal.className = 'resumo-valor ' + (balancoTotal >= 0 ? 'valor-positivo' : 'valor-negativo');
+        document.getElementById('resumo-total').textContent = `€ ${balancoTotal.toFixed(2)}`;
+        document.getElementById('resumo-total').className = 'resumo-valor ' + (balancoTotal >= 0 ? 'valor-positivo' : 'valor-negativo');
 
-        const elTrib = document.getElementById('resumo-tributavel');
-        elTrib.textContent = `€ ${balancoTributavel.toFixed(2)}`;
-        elTrib.className = 'resumo-valor ' + (balancoTributavel >= 0 ? 'valor-positivo' : 'valor-negativo');
+        document.getElementById('resumo-tributavel').textContent = `€ ${balancoTributavel.toFixed(2)}`;
+        document.getElementById('resumo-tributavel').className = 'resumo-valor ' + (balancoTributavel >= 0 ? 'valor-positivo' : 'valor-negativo');
 
         document.getElementById('resumo-imposto').textContent = `€ ${impostoFinal.toFixed(2)}`;
-        document.getElementById('irs-report-container').classList.remove('hidden');
+        
+        // MOSTRAR O RESULTADO E REMOVER O HIDDEN
+        const container = document.getElementById('irs-report-container');
+        container.classList.remove('hidden');
+        container.style.display = 'block';
     }
 </script>
 
