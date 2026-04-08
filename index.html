@@ -98,10 +98,27 @@
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 
+    // Dicionário de moedas que mudaram de nome
+    const dicionarioRebranding = {
+        'MATIC': 'POL',
+        'LEND': 'AAVE',
+        'BCHABC': 'BCH'
+    };
+
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e8f0fe'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.backgroundColor = '#f8f9fa'; });
     dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#f8f9fa'; Array.from(e.dataTransfer.files).forEach(lerFicheiro); });
     fileInput.addEventListener('change', (e) => { Array.from(e.target.files).forEach(lerFicheiro); });
+
+    function normalizarMoeda(asset) {
+        if (!asset) return asset;
+        let moedaStr = asset.toUpperCase();
+        // A Kraken às vezes coloca um 'X' ou 'Z' na frente (ex: XETH, XXBT). Nós focamos no dicionário direto:
+        if (dicionarioRebranding[moedaStr]) {
+            return dicionarioRebranding[moedaStr];
+        }
+        return moedaStr;
+    }
 
     function lerFicheiro(file) {
         if(!file) return;
@@ -111,17 +128,20 @@
                 const cols = results.meta.fields;
                 let exchange = '';
 
-                // DETEÇÃO DE ASSINATURAS
                 const isKraken = cols.includes('refid') && cols.includes('amount') && cols.includes('asset');
                 const isYoroi = cols.includes('Type (Trade, IN or OUT)') && cols.includes('Buy Amount') && cols.includes('Date');
 
                 if (isKraken) {
                     exchange = 'Kraken';
-                    dadosGlobais = dadosGlobais.concat(results.data);
+                    // Traduz as moedas logo à entrada
+                    const krakenTraduzido = results.data.map(row => {
+                        row.asset = normalizarMoeda(row.asset);
+                        return row;
+                    });
+                    dadosGlobais = dadosGlobais.concat(krakenTraduzido);
                 } 
                 else if (isYoroi) {
                     exchange = 'Yoroi';
-                    // O Adaptador: Converte Yoroi para formato Kraken!
                     const yoroiTraduzido = results.data.map(row => {
                         const typeRaw = row['Type (Trade, IN or OUT)'] ? row['Type (Trade, IN or OUT)'].toLowerCase() : '';
                         if (!typeRaw) return null;
@@ -132,13 +152,12 @@
                         let amt = 0; let asset = '';
                         if (isDeposit) {
                             amt = parseFloat(row['Buy Amount']);
-                            asset = row['Buy Cur.'];
+                            asset = normalizarMoeda(row['Buy Cur.']);
                         } else {
-                            // Nas saídas (Withdrawals), a taxa da rede (fee) também saiu da carteira
                             const sellAmt = parseFloat(row['Sell Amount'] || 0);
                             const feeAmt = parseFloat(row['Fee Amount (optional)'] || 0);
                             amt = -(sellAmt + feeAmt);
-                            asset = row['Sell Cur.'];
+                            asset = normalizarMoeda(row['Sell Cur.']);
                         }
 
                         const id = row['ID'] || ('YOROI_' + Math.random().toString(36).substring(2, 10));
@@ -161,7 +180,6 @@
                     return;
                 }
 
-                // Adiciona à lista visual
                 const div = document.createElement('div');
                 div.className = 'file-item';
                 div.innerHTML = `<span>📄 <b>${file.name}</b></span> <span>✅ Reconhecido: ${exchange}</span>`;
@@ -178,8 +196,6 @@
 
     function executarMotorFIFO() {
         const anoIrsDesejado = parseInt(document.getElementById('ano-irs').value);
-        
-        // A magia principal: Ordena TODAS as transações de TODAS as exchanges cronologicamente
         dadosGlobais.sort((a, b) => new Date(a.time) - new Date(b.time));
 
         const gruposPorRefid = {};
