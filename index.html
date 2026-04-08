@@ -26,7 +26,7 @@
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
 
-        .header-tabela { border-bottom: 2px solid #1a73e8; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; }
+        .header-tabela { border-bottom: 2px solid #1a73e8; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; }
         .header-tabela h2 { margin: 0; }
         .contador-linhas { font-size: 16px; color: #666; font-weight: normal; background: #e8eaed; padding: 5px 12px; border-radius: 15px; }
 
@@ -40,7 +40,7 @@
         .alerta-staking { color: #1a73e8; font-size: 11px; display: block; font-weight: normal; cursor: help; }
         .hidden { display: none !important; }
         
-        .area-botoes-tabela { margin-top: 20px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
+        .area-botoes-tabela { margin-bottom: 20px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
         .btn-agrupar { background: #34a853; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
         .btn-agrupar:hover { background: #2b8c45; }
         .btn-copiar { background: #6c757d; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
@@ -84,6 +84,12 @@
             </div>
         </div>
 
+        <div class="area-botoes-tabela">
+            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
+            <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
+            <button id="btn-excel" class="btn-excel" onclick="exportarExcel()">📥 Exportar para Excel</button>
+        </div>
+
         <div class="header-tabela">
             <h2>📋 Anexo J - Quadro 9.2.A</h2>
             <span id="contador-linhas" class="contador-linhas">0 linhas</span>
@@ -105,12 +111,6 @@
                 </thead>
                 <tbody id="irs-tbody"></tbody>
             </table>
-        </div>
-        
-        <div class="area-botoes-tabela">
-            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
-            <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
-            <button id="btn-excel" class="btn-excel" onclick="exportarExcel()">📥 Exportar para Excel</button>
         </div>
     </div>
 </div>
@@ -246,7 +246,6 @@
 
         refidsOrdenados.forEach(refid => {
             const grupo = gruposPorRefid[refid];
-            // NOVO: Agora aceitamos trade, spend e receive como operações válidas de mercado
             const txType = (grupo[0].type || '').toLowerCase();
             const time = new Date(grupo[0].time);
 
@@ -256,7 +255,6 @@
 
             if (['trade', 'spend', 'receive'].includes(txType)) {
                 
-                // Cenário 1: Trade Fiat <-> Crypto (inclui compras via cartão/BuyCrypto)
                 if (eurRows.length > 0 && cryptoRows.length > 0) {
                     const eurAmount = parseFloat(eurRows[0].amount);
                     const cryptoAmount = parseFloat(cryptoRows[0].amount);
@@ -319,7 +317,6 @@
                         }
                     }
                 } 
-                // Cenário 2: Trade Cripto <-> Cripto
                 else if (cryptoRows.length >= 2) {
                     const rowSell = cryptoRows.find(r => parseFloat(r.amount) < 0);
                     const rowBuy = cryptoRows.find(r => parseFloat(r.amount) > 0);
