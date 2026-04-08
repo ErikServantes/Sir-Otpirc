@@ -36,10 +36,13 @@
         .alerta-staking { color: #1a73e8; font-size: 11px; display: block; font-weight: normal; cursor: help; }
         .hidden { display: none !important; }
         
-        /* NOVO: Estilo do Botão Agrupar */
-        .area-botoes-tabela { margin-top: 20px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; }
+        .area-botoes-tabela { margin-top: 20px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; display: flex; justify-content: center; gap: 15px; flex-wrap: wrap; }
         .btn-agrupar { background: #34a853; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
         .btn-agrupar:hover { background: #2b8c45; }
+        .btn-copiar { background: #6c757d; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
+        .btn-copiar:hover { background: #5a6268; }
+        .btn-excel { background: #107c41; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
+        .btn-excel:hover { background: #0c5e31; }
     </style>
 </head>
 <body>
@@ -97,16 +100,17 @@
         </div>
         
         <div class="area-botoes-tabela">
-            <p style="margin-top: 0; color: #666; font-size: 14px;">Tem muitas linhas? Agrupe transações do mesmo mês para facilitar a cópia para as Finanças.</p>
             <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
+            <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
+            <button id="btn-excel" class="btn-excel" onclick="exportarExcel()">📥 Exportar para Excel</button>
         </div>
     </div>
 </div>
 
 <script>
     let dadosGlobais = [];
-    let relatorioIRSGlobal = []; // Guarda a versão original descompactada
-    let modoAgrupado = false; // Controla o estado do botão
+    let relatorioIRSGlobal = []; 
+    let modoAgrupado = false; 
     
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
@@ -227,9 +231,10 @@
 
         let inventory = {};
         let caixaForte = {};
-        relatorioIRSGlobal = []; // Reset do relatório
-        modoAgrupado = false; // Reset do botão
+        relatorioIRSGlobal = [];
+        modoAgrupado = false; 
         document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
+        document.getElementById('btn-agrupar').style.background = "#34a853";
 
         refidsOrdenados.forEach(refid => {
             const grupo = gruposPorRefid[refid];
@@ -286,7 +291,6 @@
                     if (time.getFullYear() === anoIrsDesejado) {
                         let dataAquisicaoReal = oldestDate ? oldestDate : time;
                         
-                        // Guardamos os números brutos para podermos agrupar matematicamente mais tarde
                         relatorioIRSGlobal.push({
                             realizacaoMesAno: formatarData(time),
                             realizacaoValNum: grossEur,
@@ -351,18 +355,16 @@
         desenharTabela(relatorioIRSGlobal);
     }
 
-    // NOVO: Função que alterna entre Tabela Completa e Tabela Agrupada
     function alternarAgrupamento() {
         modoAgrupado = !modoAgrupado;
         const btn = document.getElementById('btn-agrupar');
 
         if (modoAgrupado) {
             btn.innerHTML = "🔙 Mostrar Todas as Linhas (Desagrupar)";
-            btn.style.background = "#5f6368"; // Fica cinza para indicar estado ativo
+            btn.style.background = "#5f6368"; 
             
             let linhasAgrupadas = {};
             
-            // O Motor de Compressão (Agrupa pela mesma Moeda + Mês de Compra + Mês de Venda)
             relatorioIRSGlobal.forEach(linha => {
                 const chave = `${linha.moeda}_${linha.aquisicaoMesAno}_${linha.realizacaoMesAno}`;
                 
@@ -382,23 +384,20 @@
                     };
                 }
                 
-                // Soma os valores
                 linhasAgrupadas[chave].realizacaoValNum += linha.realizacaoValNum;
                 linhasAgrupadas[chave].aquisicaoValNum += linha.aquisicaoValNum;
                 linhasAgrupadas[chave].despesasNum += linha.despesasNum;
                 linhasAgrupadas[chave].lucro += linha.lucro;
                 
-                // Se uma das linhas originais tinha erro, o grupo inteiro herda o aviso
                 if (linha.temAlertaCorrecao) linhasAgrupadas[chave].temAlertaCorrecao = true;
                 if (linha.temAlertaStaking) linhasAgrupadas[chave].temAlertaStaking = true;
             });
             
-            // Transforma o dicionário num Array para desenhar
             desenharTabela(Object.values(linhasAgrupadas), true);
             
         } else {
             btn.innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
-            btn.style.background = "#34a853"; // Volta ao verde original
+            btn.style.background = "#34a853"; 
             desenharTabela(relatorioIRSGlobal, false);
         }
     }
@@ -416,32 +415,30 @@
         }
 
         linhas.forEach(linha => {
-            // Apenas calcular os totais globais se NÃO estivermos no modo agrupado (para não somar o dobro)
             if (!isModoAgrupado) {
                 balancoTotal += linha.lucro;
                 const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
                 if (diasDetidos < 365) balancoTributavel += linha.lucro;
             }
 
-            // Constrói os alertas visuais com base nas flags matemáticas
             let valAquisicaoHtml = linha.aquisicaoValNum.toFixed(2);
             let alertaHtml = "";
             
             if (linha.temAlertaCorrecao) {
-                const tipTexto = "Valor incompleto. As moedas entraram de fora do sistema conhecido. Corrija o custo original de compra nas Finanças.";
+                const tipTexto = "Valor incompleto. As moedas entraram de fora do sistema. Corrija manualmente.";
                 valAquisicaoHtml = `<span class="alerta-vermelho" title="${tipTexto}">${linha.aquisicaoValNum.toFixed(2)}</span>`;
                 alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR</span>`;
             } else if (linha.temAlertaStaking) {
-                alertaHtml = `<span class="alerta-staking" title="Inclui moedas de Staking (Custo Zero automático)">✅ Staking</span>`;
+                alertaHtml = `<span class="alerta-staking" title="Staking (Custo Zero automático)">✅ Staking</span>`;
             }
 
             const tr = document.createElement('tr');
             tr.className = linha.lucro >= 0 ? 'row-lucro' : 'row-prejuizo';
             tr.innerHTML = `
-                <td><b>G20</b></td>
+                <td>G20</td>
                 <td>840</td>
                 <td>${linha.realizacaoMesAno}</td>
-                <td><b>${linha.realizacaoValNum.toFixed(2)}</b></td>
+                <td>${linha.realizacaoValNum.toFixed(2)}</td>
                 <td>${linha.aquisicaoMesAno}</td>
                 <td>${valAquisicaoHtml} ${alertaHtml}</td>
                 <td>${linha.despesasNum.toFixed(2)}</td>
@@ -450,22 +447,82 @@
             tbody.appendChild(tr);
         });
 
-        // Só atualizamos as caixas de resumo quando é o cálculo principal (para os números não piscarem)
         if (!isModoAgrupado) {
             const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0;
-            
             document.getElementById('resumo-total').textContent = `€ ${balancoTotal.toFixed(2)}`;
             document.getElementById('resumo-total').className = 'resumo-valor ' + (balancoTotal >= 0 ? 'valor-positivo' : 'valor-negativo');
-
             document.getElementById('resumo-tributavel').textContent = `€ ${balancoTributavel.toFixed(2)}`;
             document.getElementById('resumo-tributavel').className = 'resumo-valor ' + (balancoTributavel >= 0 ? 'valor-positivo' : 'valor-negativo');
-
             document.getElementById('resumo-imposto').textContent = `€ ${impostoFinal.toFixed(2)}`;
         }
         
-        const container = document.getElementById('irs-report-container');
-        container.classList.remove('hidden');
-        container.style.display = 'block';
+        document.getElementById('irs-report-container').classList.remove('hidden');
+    }
+
+    function copiarTabela() {
+        const table = document.getElementById('irs-table');
+        let textToCopy = "";
+        
+        for (let i = 0; i < table.rows.length; i++) {
+            let row = table.rows[i];
+            let rowData = [];
+            for (let j = 0; j < row.cells.length; j++) {
+                let cellText = row.cells[j].innerText.replace(/\n/g, ' ').trim();
+                rowData.push(cellText);
+            }
+            textToCopy += rowData.join("\t") + "\n";
+        }
+
+        navigator.clipboard.writeText(textToCopy).then(() => {
+            const btn = document.getElementById('btn-copiar');
+            const originalText = btn.innerHTML;
+            const originalColor = btn.style.background;
+            
+            btn.innerHTML = "✅ Copiado!";
+            btn.style.background = "#28a745"; 
+            
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.style.background = originalColor;
+            }, 2000);
+        }).catch(err => {
+            alert("Erro ao copiar: " + err);
+        });
+    }
+
+    // NOVO: Função para Descarregar a tabela como Ficheiro CSV (Compatível com Excel)
+    function exportarExcel() {
+        const table = document.getElementById('irs-table');
+        // O \uFEFF é um código (BOM) que avisa o Excel que o ficheiro tem acentos e caracteres especiais
+        let csvContent = "\uFEFF"; 
+        
+        for (let i = 0; i < table.rows.length; i++) {
+            let row = table.rows[i];
+            let rowData = [];
+            for (let j = 0; j < row.cells.length; j++) {
+                // Limpa quebras de linha e texto dos alertas
+                let cellText = row.cells[j].innerText.replace(/\n/g, ' ').replace(/"/g, '""').trim();
+                // Rodeia com aspas para proteger os dados
+                rowData.push('"' + cellText + '"'); 
+            }
+            // Em Portugal, o Excel usa Ponto e Vírgula (;) para separar colunas!
+            csvContent += rowData.join(";") + "\n"; 
+        }
+
+        // Cria o ficheiro invisível e faz o download
+        const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+        const link = document.createElement("a");
+        const url = URL.createObjectURL(blob);
+        
+        const ano = document.getElementById('ano-irs').value;
+        const nomeFicheiro = `IRS_Cripto_${ano}_Modo_${modoAgrupado ? 'Agrupado' : 'Completo'}.csv`;
+        
+        link.setAttribute("href", url);
+        link.setAttribute("download", nomeFicheiro);
+        link.style.visibility = 'hidden';
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
     }
 </script>
 
