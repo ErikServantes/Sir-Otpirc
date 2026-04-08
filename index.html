@@ -44,7 +44,7 @@
     <p style="text-align: center;">Carregue todos os seus ficheiros. O motor une tudo cronologicamente.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <h3>📁 Arrastar ficheiros para aqui (Pode carregar vários)</h3>
+        <h3>📁 Arrastar ficheiros para aqui (Kraken, Yoroi, Binance)</h3>
         <input type="file" id="file-input" accept=".csv" multiple class="hidden">
     </div>
 
@@ -124,9 +124,13 @@
                 const cols = results.meta.fields;
                 let exchange = '';
 
+                // DETETIVES DE ASSINATURA
                 const isKraken = cols.includes('refid') && cols.includes('amount') && cols.includes('asset');
                 const isYoroi = cols.includes('Type (Trade, IN or OUT)') && cols.includes('Buy Amount') && cols.includes('Date');
+                // A Binance às vezes tem "User_ID" ou "User ID"
+                const isBinance = (cols.includes('User_ID') || cols.includes('User ID')) && cols.includes('Operation') && cols.includes('Change') && cols.includes('Coin');
 
+                // KRAKEN
                 if (isKraken) {
                     exchange = 'Kraken';
                     const krakenTraduzido = results.data.map(row => {
@@ -135,6 +139,7 @@
                     });
                     dadosGlobais = dadosGlobais.concat(krakenTraduzido);
                 } 
+                // YOROI
                 else if (isYoroi) {
                     exchange = 'Yoroi';
                     const yoroiTraduzido = results.data.map(row => {
@@ -169,7 +174,45 @@
                     }).filter(r => r !== null && !isNaN(r.amount));
                     
                     dadosGlobais = dadosGlobais.concat(yoroiTraduzido);
-                } 
+                }
+                // BINANCE
+                else if (isBinance) {
+                    exchange = 'Binance';
+                    const binanceTraduzido = results.data.map(row => {
+                        const operation = (row['Operation'] || '').toLowerCase();
+                        if (!operation) return null;
+
+                        const amt = parseFloat(row['Change']);
+                        if (isNaN(amt) || amt === 0) return null;
+
+                        const asset = normalizarMoeda(row['Coin']);
+                        
+                        // Arregaçar as mangas com a data da Binance (Transforma 26-01-01 em 2026-01-01)
+                        let rawTime = row['Time'] || row['UTC_Time'];
+                        if (rawTime && rawTime.match(/^\d{2}-\d{2}-\d{2}/)) {
+                            rawTime = '20' + rawTime;
+                        }
+
+                        // Deteta se é uma recompensa (Earn, Staking, Launchpool, etc.)
+                        const palavrasRecompensa = ['reward', 'earn', 'staking', 'distribution', 'airdrop', 'launchpool', 'cashback'];
+                        const isReward = palavrasRecompensa.some(palavra => operation.includes(palavra));
+
+                        const id = 'BINANCE_' + Math.random().toString(36).substring(2, 10);
+
+                        return {
+                            refid: id,
+                            time: rawTime,
+                            type: amt > 0 ? 'deposit' : 'withdrawal',
+                            asset: asset,
+                            amount: amt,
+                            subtype: isReward ? 'reward' : '',
+                            fee: 0
+                        };
+                    }).filter(r => r !== null);
+
+                    dadosGlobais = dadosGlobais.concat(binanceTraduzido);
+                }
+                // DESCONHECIDO
                 else {
                     alert(`❌ O ficheiro ${file.name} tem um formato desconhecido e foi ignorado.`);
                     return;
@@ -219,23 +262,19 @@
                 const cryptoAmount = parseFloat(cryptoRows[0].amount);
                 const asset = cryptoRows[0].asset;
                 
-                // NOVO: Cálculo Dinâmico de Taxas (Euros ou Cripto)
                 const rawFeeEur = parseFloat(eurRows[0].fee || 0);
                 const rawFeeCrypto = parseFloat(cryptoRows[0].fee || 0);
 
                 if(!inventory[asset]) inventory[asset] = [];
 
                 if (cryptoAmount > 0 && eurAmount < 0) {
-                    // COMPRA: Descobrir o câmbio exato para converter taxas de cripto em euros se necessário
                     const rate = Math.abs(eurAmount) / cryptoAmount;
                     const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
-                    
                     const totalPago = Math.abs(eurAmount) + totalFeeEur;
                     const pricePerUnit = totalPago / cryptoAmount;
                     inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                 }
                 else if (cryptoAmount < 0 && eurAmount > 0) {
-                    // VENDA: Descobrir o câmbio exato para converter taxas de cripto em euros
                     const rate = eurAmount / Math.abs(cryptoAmount);
                     const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
 
@@ -279,7 +318,7 @@
                             realizacaoVal: grossEur.toFixed(2),
                             aquisicaoMesAno: formatarData(dataAquisicaoReal),
                             aquisicaoValHtml: valAquisicaoHtml + alertaHtml,
-                            despesas: totalFeeEur.toFixed(2), // Agora usa a taxa total convertida!
+                            despesas: totalFeeEur.toFixed(2),
                             moeda: asset,
                             lucro: grossEur - costBasis - totalFeeEur,
                             timeAqusicaoMs: dataAquisicaoReal.getTime(),
