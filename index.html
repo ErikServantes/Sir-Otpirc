@@ -35,16 +35,21 @@
         .alerta-vermelho { color: #d93025; font-weight: bold; cursor: help; text-decoration: underline dotted; }
         .alerta-staking { color: #1a73e8; font-size: 11px; display: block; font-weight: normal; cursor: help; }
         .hidden { display: none !important; }
+        
+        /* NOVO: Estilo do Botão Agrupar */
+        .area-botoes-tabela { margin-top: 20px; text-align: center; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px dashed #ccc; }
+        .btn-agrupar { background: #34a853; color: white; border: none; padding: 10px 20px; font-size: 15px; border-radius: 5px; cursor: pointer; font-weight: bold; box-shadow: 0 2px 5px rgba(0,0,0,0.1); transition: 0.2s; }
+        .btn-agrupar:hover { background: #2b8c45; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📊 CALCULADORA IRS PROs TESOS</h1>
-    <p style="text-align: center;">Sensy, carrega aqui todos os ficheiros, de 2021 até à data atual. O motor une tudo cronologicamente.</p>
+    <h1>📊 Calculadora IRS Cripto Pro</h1>
+    <p style="text-align: center;">Carregue todos os seus ficheiros. O motor une tudo cronologicamente.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <h3>📁 Arrasta os gajos para aqui (Kraken, Yoroi, Binance)</h3>
+        <h3>📁 Arrastar ficheiros para aqui (Kraken, Yoroi, Binance)</h3>
         <input type="file" id="file-input" accept=".csv" multiple class="hidden">
     </div>
 
@@ -90,11 +95,19 @@
                 <tbody id="irs-tbody"></tbody>
             </table>
         </div>
+        
+        <div class="area-botoes-tabela">
+            <p style="margin-top: 0; color: #666; font-size: 14px;">Tem muitas linhas? Agrupe transações do mesmo mês para facilitar a cópia para as Finanças.</p>
+            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
+        </div>
     </div>
 </div>
 
 <script>
     let dadosGlobais = [];
+    let relatorioIRSGlobal = []; // Guarda a versão original descompactada
+    let modoAgrupado = false; // Controla o estado do botão
+    
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 
@@ -124,13 +137,10 @@
                 const cols = results.meta.fields;
                 let exchange = '';
 
-                // DETETIVES DE ASSINATURA
                 const isKraken = cols.includes('refid') && cols.includes('amount') && cols.includes('asset');
                 const isYoroi = cols.includes('Type (Trade, IN or OUT)') && cols.includes('Buy Amount') && cols.includes('Date');
-                // A Binance às vezes tem "User_ID" ou "User ID"
                 const isBinance = (cols.includes('User_ID') || cols.includes('User ID')) && cols.includes('Operation') && cols.includes('Change') && cols.includes('Coin');
 
-                // KRAKEN
                 if (isKraken) {
                     exchange = 'Kraken';
                     const krakenTraduzido = results.data.map(row => {
@@ -139,7 +149,6 @@
                     });
                     dadosGlobais = dadosGlobais.concat(krakenTraduzido);
                 } 
-                // YOROI
                 else if (isYoroi) {
                     exchange = 'Yoroi';
                     const yoroiTraduzido = results.data.map(row => {
@@ -159,23 +168,11 @@
                             amt = -(sellAmt + feeAmt);
                             asset = normalizarMoeda(row['Sell Cur.']);
                         }
-
                         const id = row['ID'] || ('YOROI_' + Math.random().toString(36).substring(2, 10));
-
-                        return {
-                            refid: id,
-                            time: row['Date'],
-                            type: isDeposit ? 'deposit' : 'withdrawal',
-                            asset: asset,
-                            amount: amt,
-                            subtype: isReward ? 'reward' : '',
-                            fee: 0
-                        };
+                        return { refid: id, time: row['Date'], type: isDeposit ? 'deposit' : 'withdrawal', asset: asset, amount: amt, subtype: isReward ? 'reward' : '', fee: 0 };
                     }).filter(r => r !== null && !isNaN(r.amount));
-                    
                     dadosGlobais = dadosGlobais.concat(yoroiTraduzido);
                 }
-                // BINANCE
                 else if (isBinance) {
                     exchange = 'Binance';
                     const binanceTraduzido = results.data.map(row => {
@@ -186,33 +183,17 @@
                         if (isNaN(amt) || amt === 0) return null;
 
                         const asset = normalizarMoeda(row['Coin']);
-                        
-                        // Arregaçar as mangas com a data da Binance (Transforma 26-01-01 em 2026-01-01)
                         let rawTime = row['Time'] || row['UTC_Time'];
-                        if (rawTime && rawTime.match(/^\d{2}-\d{2}-\d{2}/)) {
-                            rawTime = '20' + rawTime;
-                        }
+                        if (rawTime && rawTime.match(/^\d{2}-\d{2}-\d{2}/)) rawTime = '20' + rawTime;
 
-                        // Deteta se é uma recompensa (Earn, Staking, Launchpool, etc.)
                         const palavrasRecompensa = ['reward', 'earn', 'staking', 'distribution', 'airdrop', 'launchpool', 'cashback'];
                         const isReward = palavrasRecompensa.some(palavra => operation.includes(palavra));
 
                         const id = 'BINANCE_' + Math.random().toString(36).substring(2, 10);
-
-                        return {
-                            refid: id,
-                            time: rawTime,
-                            type: amt > 0 ? 'deposit' : 'withdrawal',
-                            asset: asset,
-                            amount: amt,
-                            subtype: isReward ? 'reward' : '',
-                            fee: 0
-                        };
+                        return { refid: id, time: rawTime, type: amt > 0 ? 'deposit' : 'withdrawal', asset: asset, amount: amt, subtype: isReward ? 'reward' : '', fee: 0 };
                     }).filter(r => r !== null);
-
                     dadosGlobais = dadosGlobais.concat(binanceTraduzido);
                 }
-                // DESCONHECIDO
                 else {
                     alert(`❌ O ficheiro ${file.name} tem um formato desconhecido e foi ignorado.`);
                     return;
@@ -246,7 +227,9 @@
 
         let inventory = {};
         let caixaForte = {};
-        let relatorioIRS = [];
+        relatorioIRSGlobal = []; // Reset do relatório
+        modoAgrupado = false; // Reset do botão
+        document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
 
         refidsOrdenados.forEach(refid => {
             const grupo = gruposPorRefid[refid];
@@ -302,27 +285,20 @@
 
                     if (time.getFullYear() === anoIrsDesejado) {
                         let dataAquisicaoReal = oldestDate ? oldestDate : time;
-                        let valAquisicaoHtml = costBasis.toFixed(2);
-                        let alertaHtml = "";
-
-                        if (costBasis < 0.01 && origens.has("Depósito Externo")) {
-                            const tipTexto = "Valor a zeros porque as moedas entraram de fora do sistema conhecido. Procure o custo original noutra exchange.";
-                            valAquisicaoHtml = `<span class="alerta-vermelho" title="${tipTexto}">0.00</span>`;
-                            alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR</span>`;
-                        } else if (costBasis < 0.01 && origens.has("Staking")) {
-                            alertaHtml = `<span class="alerta-staking" title="Ganho em Staking (Custo Zero automático)">✅ Staking (Custo 0)</span>`;
-                        }
-
-                        relatorioIRS.push({
+                        
+                        // Guardamos os números brutos para podermos agrupar matematicamente mais tarde
+                        relatorioIRSGlobal.push({
                             realizacaoMesAno: formatarData(time),
-                            realizacaoVal: grossEur.toFixed(2),
+                            realizacaoValNum: grossEur,
                             aquisicaoMesAno: formatarData(dataAquisicaoReal),
-                            aquisicaoValHtml: valAquisicaoHtml + alertaHtml,
-                            despesas: totalFeeEur.toFixed(2),
+                            aquisicaoValNum: costBasis,
+                            despesasNum: totalFeeEur,
                             moeda: asset,
                             lucro: grossEur - costBasis - totalFeeEur,
                             timeAqusicaoMs: dataAquisicaoReal.getTime(),
-                            timeRealizacaoMs: time.getTime()
+                            timeRealizacaoMs: time.getTime(),
+                            temAlertaCorrecao: (costBasis < 0.01 && origens.has("Depósito Externo")),
+                            temAlertaStaking: (costBasis < 0.01 && origens.has("Staking"))
                         });
                     }
                 }
@@ -372,10 +348,62 @@
             }
         });
 
-        desenharTabela(relatorioIRS, anoIrsDesejado);
+        desenharTabela(relatorioIRSGlobal);
     }
 
-    function desenharTabela(linhas, ano) {
+    // NOVO: Função que alterna entre Tabela Completa e Tabela Agrupada
+    function alternarAgrupamento() {
+        modoAgrupado = !modoAgrupado;
+        const btn = document.getElementById('btn-agrupar');
+
+        if (modoAgrupado) {
+            btn.innerHTML = "🔙 Mostrar Todas as Linhas (Desagrupar)";
+            btn.style.background = "#5f6368"; // Fica cinza para indicar estado ativo
+            
+            let linhasAgrupadas = {};
+            
+            // O Motor de Compressão (Agrupa pela mesma Moeda + Mês de Compra + Mês de Venda)
+            relatorioIRSGlobal.forEach(linha => {
+                const chave = `${linha.moeda}_${linha.aquisicaoMesAno}_${linha.realizacaoMesAno}`;
+                
+                if (!linhasAgrupadas[chave]) {
+                    linhasAgrupadas[chave] = {
+                        realizacaoMesAno: linha.realizacaoMesAno,
+                        realizacaoValNum: 0,
+                        aquisicaoMesAno: linha.aquisicaoMesAno,
+                        aquisicaoValNum: 0,
+                        despesasNum: 0,
+                        moeda: linha.moeda,
+                        lucro: 0,
+                        timeAqusicaoMs: linha.timeAqusicaoMs,
+                        timeRealizacaoMs: linha.timeRealizacaoMs,
+                        temAlertaCorrecao: false,
+                        temAlertaStaking: false
+                    };
+                }
+                
+                // Soma os valores
+                linhasAgrupadas[chave].realizacaoValNum += linha.realizacaoValNum;
+                linhasAgrupadas[chave].aquisicaoValNum += linha.aquisicaoValNum;
+                linhasAgrupadas[chave].despesasNum += linha.despesasNum;
+                linhasAgrupadas[chave].lucro += linha.lucro;
+                
+                // Se uma das linhas originais tinha erro, o grupo inteiro herda o aviso
+                if (linha.temAlertaCorrecao) linhasAgrupadas[chave].temAlertaCorrecao = true;
+                if (linha.temAlertaStaking) linhasAgrupadas[chave].temAlertaStaking = true;
+            });
+            
+            // Transforma o dicionário num Array para desenhar
+            desenharTabela(Object.values(linhasAgrupadas), true);
+            
+        } else {
+            btn.innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
+            btn.style.background = "#34a853"; // Volta ao verde original
+            desenharTabela(relatorioIRSGlobal, false);
+        }
+    }
+
+    function desenharTabela(linhas, isModoAgrupado = false) {
         const tbody = document.getElementById('irs-tbody');
         tbody.innerHTML = '';
         
@@ -383,10 +411,29 @@
         let balancoTributavel = 0;
         const msPorDia = 1000 * 60 * 60 * 24;
 
+        if (linhas.length === 0 && !isModoAgrupado) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 20px;">Não foram encontradas vendas neste ano.</td></tr>`;
+        }
+
         linhas.forEach(linha => {
-            balancoTotal += linha.lucro;
-            const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
-            if (diasDetidos < 365) balancoTributavel += linha.lucro;
+            // Apenas calcular os totais globais se NÃO estivermos no modo agrupado (para não somar o dobro)
+            if (!isModoAgrupado) {
+                balancoTotal += linha.lucro;
+                const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
+                if (diasDetidos < 365) balancoTributavel += linha.lucro;
+            }
+
+            // Constrói os alertas visuais com base nas flags matemáticas
+            let valAquisicaoHtml = linha.aquisicaoValNum.toFixed(2);
+            let alertaHtml = "";
+            
+            if (linha.temAlertaCorrecao) {
+                const tipTexto = "Valor incompleto. As moedas entraram de fora do sistema conhecido. Corrija o custo original de compra nas Finanças.";
+                valAquisicaoHtml = `<span class="alerta-vermelho" title="${tipTexto}">${linha.aquisicaoValNum.toFixed(2)}</span>`;
+                alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR</span>`;
+            } else if (linha.temAlertaStaking) {
+                alertaHtml = `<span class="alerta-staking" title="Inclui moedas de Staking (Custo Zero automático)">✅ Staking</span>`;
+            }
 
             const tr = document.createElement('tr');
             tr.className = linha.lucro >= 0 ? 'row-lucro' : 'row-prejuizo';
@@ -394,24 +441,27 @@
                 <td><b>G20</b></td>
                 <td>840</td>
                 <td>${linha.realizacaoMesAno}</td>
-                <td><b>${linha.realizacaoVal}</b></td>
+                <td><b>${linha.realizacaoValNum.toFixed(2)}</b></td>
                 <td>${linha.aquisicaoMesAno}</td>
-                <td>${linha.aquisicaoValHtml}</td>
-                <td>${linha.despesas}</td>
+                <td>${valAquisicaoHtml} ${alertaHtml}</td>
+                <td>${linha.despesasNum.toFixed(2)}</td>
                 <td>${linha.moeda}</td>
             `;
             tbody.appendChild(tr);
         });
 
-        const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0;
-        
-        document.getElementById('resumo-total').textContent = `€ ${balancoTotal.toFixed(2)}`;
-        document.getElementById('resumo-total').className = 'resumo-valor ' + (balancoTotal >= 0 ? 'valor-positivo' : 'valor-negativo');
+        // Só atualizamos as caixas de resumo quando é o cálculo principal (para os números não piscarem)
+        if (!isModoAgrupado) {
+            const impostoFinal = balancoTributavel > 0 ? balancoTributavel * 0.28 : 0;
+            
+            document.getElementById('resumo-total').textContent = `€ ${balancoTotal.toFixed(2)}`;
+            document.getElementById('resumo-total').className = 'resumo-valor ' + (balancoTotal >= 0 ? 'valor-positivo' : 'valor-negativo');
 
-        document.getElementById('resumo-tributavel').textContent = `€ ${balancoTributavel.toFixed(2)}`;
-        document.getElementById('resumo-tributavel').className = 'resumo-valor ' + (balancoTributavel >= 0 ? 'valor-positivo' : 'valor-negativo');
+            document.getElementById('resumo-tributavel').textContent = `€ ${balancoTributavel.toFixed(2)}`;
+            document.getElementById('resumo-tributavel').className = 'resumo-valor ' + (balancoTributavel >= 0 ? 'valor-positivo' : 'valor-negativo');
 
-        document.getElementById('resumo-imposto').textContent = `€ ${impostoFinal.toFixed(2)}`;
+            document.getElementById('resumo-imposto').textContent = `€ ${impostoFinal.toFixed(2)}`;
+        }
         
         const container = document.getElementById('irs-report-container');
         container.classList.remove('hidden');
