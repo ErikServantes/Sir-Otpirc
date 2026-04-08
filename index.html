@@ -11,14 +11,14 @@
         h1 { text-align: center; color: #1a73e8; }
         .upload-area { border: 2px dashed #1a73e8; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; background-color: #f8f9fa; transition: background 0.3s; margin-bottom: 20px; }
         .upload-area:hover { background-color: #e8f0fe; }
-        .file-item { padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; background-color: #e6f4ea; border-left: 5px solid #28a745; display: flex; justify-content: space-between; align-items: center; }
+        .file-list { margin-bottom: 20px; }
+        .file-item { padding: 12px; margin: 8px 0; border-radius: 5px; border: 1px solid #ddd; background-color: #e6f4ea; border-left: 5px solid #28a745; display: flex; justify-content: space-between; align-items: center; }
         .action-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #e0e0e0; }
         
         input[type="number"] { padding: 10px; font-size: 16px; width: 100px; border: 1px solid #ccc; border-radius: 5px; margin-right: 15px; }
         .btn-calcular { background: #1a73e8; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 5px; cursor: pointer; font-weight: bold; }
         .btn-calcular:hover { background: #1557b0; }
         
-        /* Resumo Fiscal */
         .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .resumo-box { text-align: center; }
         .resumo-valor { font-size: 24px; font-weight: bold; margin-top: 5px; }
@@ -26,17 +26,14 @@
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
 
-        /* Estilos da Tabela do IRS */
         table { width: 100%; border-collapse: collapse; margin-top: 10px; font-size: 14px; }
         th { background-color: #f1f3f4; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #5f6368; }
         td { padding: 12px; border-bottom: 1px solid #ddd; }
         .row-lucro { background-color: #d4edda !important; }
         .row-prejuizo { background-color: #f8d7da !important; }
         
-        /* ALERTAS VERMELHOS E TOOLTIP */
         .alerta-vermelho { color: #d93025; font-weight: bold; cursor: help; text-decoration: underline dotted; }
         .alerta-staking { color: #1a73e8; font-size: 11px; display: block; font-weight: normal; cursor: help; }
-        
         .hidden { display: none !important; }
     </style>
 </head>
@@ -44,19 +41,19 @@
 
 <div class="container">
     <h1>📊 Calculadora IRS Cripto Pro</h1>
-    <p style="text-align: center;">Calcule as suas mais-valias (FIFO) para o Anexo J com suporte a Ledger.</p>
+    <p style="text-align: center;">Carregue todos os seus ficheiros (Kraken, Yoroi, etc.). O motor une tudo cronologicamente.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <h3>📁 Arrastar o ficheiro Histórico da Kraken para aqui</h3>
-        <input type="file" id="file-input" accept=".csv" class="hidden">
+        <h3>📁 Arrastar ficheiros para aqui (Pode carregar vários)</h3>
+        <input type="file" id="file-input" accept=".csv" multiple class="hidden">
     </div>
 
-    <div id="results"></div>
+    <div id="results-list" class="file-list"></div>
 
     <div id="action-panel" class="action-panel hidden">
         <label style="font-size: 18px; font-weight: bold;">Qual é o ano a declarar? </label>
         <input type="number" id="ano-irs" value="2025" min="2010" max="2100">
-        <button class="btn-calcular" onclick="executarMotorFIFO()">Gerar Tabela e Impostos</button>
+        <button class="btn-calcular" onclick="executarMotorFIFO()">Juntar Dados e Gerar IRS</button>
     </div>
 
     <div id="irs-report-container" class="hidden">
@@ -103,8 +100,8 @@
 
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e8f0fe'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.backgroundColor = '#f8f9fa'; });
-    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#f8f9fa'; lerFicheiro(e.dataTransfer.files[0]); });
-    fileInput.addEventListener('change', (e) => { lerFicheiro(e.target.files[0]); });
+    dropZone.addEventListener('drop', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#f8f9fa'; Array.from(e.dataTransfer.files).forEach(lerFicheiro); });
+    fileInput.addEventListener('change', (e) => { Array.from(e.target.files).forEach(lerFicheiro); });
 
     function lerFicheiro(file) {
         if(!file) return;
@@ -112,14 +109,64 @@
             header: true, skipEmptyLines: true,
             complete: function(results) {
                 const cols = results.meta.fields;
-                if(cols.includes('refid') && cols.includes('amount') && cols.includes('asset')) {
-                    dadosGlobais = results.data;
-                    document.getElementById('results').innerHTML = `<div class="file-item"><span>📄 <b>${file.name}</b> (${dadosGlobais.length} linhas)</span> <span>✅ Kraken Identificada</span></div>`;
-                    document.getElementById('action-panel').classList.remove('hidden');
-                    document.getElementById('irs-report-container').classList.add('hidden');
-                } else {
-                    alert("Atenção: Este ficheiro não parece ser o Histórico da Kraken.");
+                let exchange = '';
+
+                // DETEÇÃO DE ASSINATURAS
+                const isKraken = cols.includes('refid') && cols.includes('amount') && cols.includes('asset');
+                const isYoroi = cols.includes('Type (Trade, IN or OUT)') && cols.includes('Buy Amount') && cols.includes('Date');
+
+                if (isKraken) {
+                    exchange = 'Kraken';
+                    dadosGlobais = dadosGlobais.concat(results.data);
+                } 
+                else if (isYoroi) {
+                    exchange = 'Yoroi';
+                    // O Adaptador: Converte Yoroi para formato Kraken!
+                    const yoroiTraduzido = results.data.map(row => {
+                        const typeRaw = row['Type (Trade, IN or OUT)'] ? row['Type (Trade, IN or OUT)'].toLowerCase() : '';
+                        if (!typeRaw) return null;
+
+                        const isDeposit = typeRaw === 'deposit' || typeRaw === 'in';
+                        const isReward = (row['Comment (optional)'] || '').toLowerCase().includes('reward');
+                        
+                        let amt = 0; let asset = '';
+                        if (isDeposit) {
+                            amt = parseFloat(row['Buy Amount']);
+                            asset = row['Buy Cur.'];
+                        } else {
+                            // Nas saídas (Withdrawals), a taxa da rede (fee) também saiu da carteira
+                            const sellAmt = parseFloat(row['Sell Amount'] || 0);
+                            const feeAmt = parseFloat(row['Fee Amount (optional)'] || 0);
+                            amt = -(sellAmt + feeAmt);
+                            asset = row['Sell Cur.'];
+                        }
+
+                        const id = row['ID'] || ('YOROI_' + Math.random().toString(36).substring(2, 10));
+
+                        return {
+                            refid: id,
+                            time: row['Date'],
+                            type: isDeposit ? 'deposit' : 'withdrawal',
+                            asset: asset,
+                            amount: amt,
+                            subtype: isReward ? 'reward' : '',
+                            fee: 0
+                        };
+                    }).filter(r => r !== null && !isNaN(r.amount));
+                    
+                    dadosGlobais = dadosGlobais.concat(yoroiTraduzido);
+                } 
+                else {
+                    alert(`❌ O ficheiro ${file.name} tem um formato desconhecido e foi ignorado.`);
+                    return;
                 }
+
+                // Adiciona à lista visual
+                const div = document.createElement('div');
+                div.className = 'file-item';
+                div.innerHTML = `<span>📄 <b>${file.name}</b></span> <span>✅ Reconhecido: ${exchange}</span>`;
+                document.getElementById('results-list').appendChild(div);
+                document.getElementById('action-panel').classList.remove('hidden');
             }
         });
     }
@@ -131,6 +178,8 @@
 
     function executarMotorFIFO() {
         const anoIrsDesejado = parseInt(document.getElementById('ano-irs').value);
+        
+        // A magia principal: Ordena TODAS as transações de TODAS as exchanges cronologicamente
         dadosGlobais.sort((a, b) => new Date(a.time) - new Date(b.time));
 
         const gruposPorRefid = {};
@@ -164,7 +213,7 @@
 
                 if (cryptoAmount > 0 && eurAmount < 0) {
                     const pricePerUnit = (Math.abs(eurAmount) + feeEur) / cryptoAmount;
-                    inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Kraken' });
+                    inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                 }
                 else if (cryptoAmount < 0 && eurAmount > 0) {
                     let qtyToSell = Math.abs(cryptoAmount);
@@ -194,13 +243,12 @@
                         let valAquisicaoHtml = costBasis.toFixed(2);
                         let alertaHtml = "";
 
-                        // LÓGICA DE ALERTAS COLORIDOS E TOOLTIPS
                         if (costBasis < 0.01 && origens.has("Depósito Externo")) {
-                            const tipTexto = "Este valor é 0.00 porque esta moeda veio de fora da Kraken (ex: Binance ou Ledger). Deve procurar o preço que pagou na altura e alterar manualmente no IRS.";
+                            const tipTexto = "Valor a zeros porque as moedas entraram de fora do sistema conhecido. Procure o custo original noutra exchange.";
                             valAquisicaoHtml = `<span class="alerta-vermelho" title="${tipTexto}">0.00</span>`;
-                            alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR (Info)</span>`;
+                            alertaHtml = `<span class="alerta-vermelho" title="${tipTexto}">⚠️ CORRIGIR</span>`;
                         } else if (costBasis < 0.01 && origens.has("Staking")) {
-                            alertaHtml = `<span class="alerta-staking" title="Esta moeda foi ganha em Staking/Rewards. O custo de aquisição é 0.00 por lei.">✅ Staking (Custo 0)</span>`;
+                            alertaHtml = `<span class="alerta-staking" title="Ganho em Staking (Custo Zero automático)">✅ Staking (Custo 0)</span>`;
                         }
 
                         relatorioIRS.push({
@@ -276,12 +324,10 @@
         linhas.forEach(linha => {
             balancoTotal += linha.lucro;
             const diasDetidos = (linha.timeRealizacaoMs - linha.timeAqusicaoMs) / msPorDia;
-            if (diasDetidos < 365) {
-                balancoTributavel += linha.lucro;
-            }
+            if (diasDetidos < 365) balancoTributavel += linha.lucro;
 
             const tr = document.createElement('tr');
-            tr.className = linha.lucro > 0 ? 'row-lucro' : 'row-prejuizo';
+            tr.className = linha.lucro >= 0 ? 'row-lucro' : 'row-prejuizo';
             tr.innerHTML = `
                 <td><b>G20</b></td>
                 <td>840</td>
@@ -305,7 +351,6 @@
 
         document.getElementById('resumo-imposto').textContent = `€ ${impostoFinal.toFixed(2)}`;
         
-        // MOSTRAR O RESULTADO E REMOVER O HIDDEN
         const container = document.getElementById('irs-report-container');
         container.classList.remove('hidden');
         container.style.display = 'block';
