@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="pt">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calculadora IRS Cripto</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
+        .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        h1 { text-align: center; color: #1a73e8; }
+        .upload-area { border: 2px dashed #1a73e8; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; background-color: #f8f9fa; transition: background 0.3s; margin-bottom: 20px; }
+        .upload-area:hover { background-color: #e8f0fe; }
+        .file-list { margin-top: 20px; }
+        .file-item { padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
+        .status-ok { background-color: #d4edda; border-left: 5px solid #28a745; }
+        .status-warning { background-color: #fff3cd; border-left: 5px solid #ffc107; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h1>📊 Calculadora IRS Cripto</h1>
+    <p style="text-align: center;">Arraste os seus ficheiros CSV (Kraken, Binance, Crypto.com, etc.)</p>
+
+    <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
+        <h3>📁 Arrastar ficheiros para aqui</h3>
+        <p>ou clique para selecionar</p>
+        <input type="file" id="file-input" multiple accept=".csv" class="hidden">
+    </div>
+
+    <div id="results" class="file-list"></div>
+</div>
+
+<script>
+    // 1. A NOSSA MEMÓRIA (Dicionário de Assinaturas)
+    const assinaturasConhecidas = {
+        "Kraken": ["txid", "refid", "time", "type", "asset", "amount"],
+        "Binance": ["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change"],
+        "Crypto.com": ["Timestamp (UTC)", "Transaction Description", "Currency", "Amount"]
+    };
+
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
+    const resultsDiv = document.getElementById('results');
+
+    // Funcionalidade de arrastar e largar
+    dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e8f0fe'; });
+    dropZone.addEventListener('dragleave', () => { dropZone.style.backgroundColor = '#f8f9fa'; });
+    dropZone.addEventListener('drop', (e) => {
+        e.preventDefault();
+        dropZone.style.backgroundColor = '#f8f9fa';
+        processarFicheiros(e.dataTransfer.files);
+    });
+    fileInput.addEventListener('change', (e) => { processarFicheiros(e.target.files); });
+
+    // 2. FUNÇÃO PRINCIPAL: LER O FICHEIRO E RECONHECER
+    function processarFicheiros(files) {
+        resultsDiv.innerHTML = ''; // Limpa resultados anteriores
+        
+        Array.from(files).forEach(file => {
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                const text = e.target.result;
+                // Pega na primeira linha (cabeçalhos) e limpa aspas e espaços
+                const primeiraLinha = text.split('\n')[0];
+                const cabecalhos = primeiraLinha.split(',').map(c => c.replace(/"/g, '').trim());
+                
+                analisarCabecalhos(file.name, cabecalhos);
+            };
+            // Lemos apenas os primeiros 1000 caracteres para ser super rápido
+            reader.readAsText(file.slice(0, 1000)); 
+        });
+    }
+
+    // 3. O DETETIVE AUTOMÁTICO
+    function analisarCabecalhos(fileName, cabecalhos) {
+        let corretoraEncontrada = null;
+
+        // Procura no dicionário
+        for (const [corretora, assinatura] of Object.entries(assinaturasConhecidas)) {
+            // Verifica se TODAS as colunas da assinatura existem no ficheiro
+            const isMatch = assinatura.every(col => cabecalhos.includes(col));
+            if (isMatch) {
+                corretoraEncontrada = corretora;
+                break;
+            }
+        }
+
+        // Desenha o resultado no ecrã
+        const div = document.createElement('div');
+        if (corretoraEncontrada) {
+            div.className = 'file-item status-ok';
+            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>✅ ${corretoraEncontrada}</span>`;
+        } else {
+            div.className = 'file-item status-warning';
+            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>⚠️ Formato Desconhecido (Necessita Ajuda)</span>`;
+        }
+        resultsDiv.appendChild(div);
+    }
+</script>
+
+</body>
+</html>
