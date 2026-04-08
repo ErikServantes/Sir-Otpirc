@@ -41,7 +41,7 @@
 
 <div class="container">
     <h1>📊 Calculadora IRS Cripto Pro</h1>
-    <p style="text-align: center;">Carregue todos os seus ficheiros (Kraken, Yoroi, etc.). O motor une tudo cronologicamente.</p>
+    <p style="text-align: center;">Carregue todos os seus ficheiros. O motor une tudo cronologicamente.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <h3>📁 Arrastar ficheiros para aqui (Pode carregar vários)</h3>
@@ -98,7 +98,6 @@
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 
-    // Dicionário de moedas que mudaram de nome
     const dicionarioRebranding = {
         'MATIC': 'POL',
         'LEND': 'AAVE',
@@ -113,10 +112,7 @@
     function normalizarMoeda(asset) {
         if (!asset) return asset;
         let moedaStr = asset.toUpperCase();
-        // A Kraken às vezes coloca um 'X' ou 'Z' na frente (ex: XETH, XXBT). Nós focamos no dicionário direto:
-        if (dicionarioRebranding[moedaStr]) {
-            return dicionarioRebranding[moedaStr];
-        }
+        if (dicionarioRebranding[moedaStr]) return dicionarioRebranding[moedaStr];
         return moedaStr;
     }
 
@@ -133,7 +129,6 @@
 
                 if (isKraken) {
                     exchange = 'Kraken';
-                    // Traduz as moedas logo à entrada
                     const krakenTraduzido = results.data.map(row => {
                         row.asset = normalizarMoeda(row.asset);
                         return row;
@@ -223,15 +218,27 @@
                 const eurAmount = parseFloat(eurRows[0].amount);
                 const cryptoAmount = parseFloat(cryptoRows[0].amount);
                 const asset = cryptoRows[0].asset;
-                const feeEur = eurRows[0].fee ? parseFloat(eurRows[0].fee) : 0;
+                
+                // NOVO: Cálculo Dinâmico de Taxas (Euros ou Cripto)
+                const rawFeeEur = parseFloat(eurRows[0].fee || 0);
+                const rawFeeCrypto = parseFloat(cryptoRows[0].fee || 0);
 
                 if(!inventory[asset]) inventory[asset] = [];
 
                 if (cryptoAmount > 0 && eurAmount < 0) {
-                    const pricePerUnit = (Math.abs(eurAmount) + feeEur) / cryptoAmount;
+                    // COMPRA: Descobrir o câmbio exato para converter taxas de cripto em euros se necessário
+                    const rate = Math.abs(eurAmount) / cryptoAmount;
+                    const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
+                    
+                    const totalPago = Math.abs(eurAmount) + totalFeeEur;
+                    const pricePerUnit = totalPago / cryptoAmount;
                     inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                 }
                 else if (cryptoAmount < 0 && eurAmount > 0) {
+                    // VENDA: Descobrir o câmbio exato para converter taxas de cripto em euros
+                    const rate = eurAmount / Math.abs(cryptoAmount);
+                    const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
+
                     let qtyToSell = Math.abs(cryptoAmount);
                     const grossEur = eurAmount;
                     let costBasis = 0;
@@ -272,9 +279,9 @@
                             realizacaoVal: grossEur.toFixed(2),
                             aquisicaoMesAno: formatarData(dataAquisicaoReal),
                             aquisicaoValHtml: valAquisicaoHtml + alertaHtml,
-                            despesas: feeEur.toFixed(2),
+                            despesas: totalFeeEur.toFixed(2), // Agora usa a taxa total convertida!
                             moeda: asset,
-                            lucro: grossEur - costBasis - feeEur,
+                            lucro: grossEur - costBasis - totalFeeEur,
                             timeAqusicaoMs: dataAquisicaoReal.getTime(),
                             timeRealizacaoMs: time.getTime()
                         });
