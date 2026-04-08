@@ -4,172 +4,301 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Calculadora IRS Cripto Pro</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
         .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
         h1 { text-align: center; color: #1a73e8; }
         .upload-area { border: 2px dashed #1a73e8; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; background-color: #f8f9fa; transition: background 0.3s; margin-bottom: 20px; }
         .upload-area:hover { background-color: #e8f0fe; }
-        .file-list { margin-top: 20px; }
-        .file-item { padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; }
-        .status-ok { background-color: #d4edda; border-left: 5px solid #28a745; display: flex; justify-content: space-between; }
-        .status-warning { background-color: #fff3cd; border-left: 5px solid #ffc107; }
+        .file-item { padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; background-color: #d4edda; border-left: 5px solid #28a745; display: flex; justify-content: space-between; align-items: center; }
+        .action-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #e0e0e0; }
         
-        /* Estilos do Formulário de Ajuda */
-        .mapping-box { margin-top: 15px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #ccc; }
-        .mapping-row { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
-        select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; width: 60%; }
-        .btn-salvar { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
-        .btn-salvar:hover { background: #1557b0; }
+        input[type="number"] { padding: 10px; font-size: 16px; width: 100px; border: 1px solid #ccc; border-radius: 5px; margin-right: 15px; }
+        .btn-calcular { background: #1a73e8; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        .btn-calcular:hover { background: #1557b0; }
+        
+        /* Estilos da Tabela do IRS */
+        table { width: 100%; border-collapse: collapse; margin-top: 20px; font-size: 14px; }
+        th { background-color: #f1f3f4; padding: 12px; text-align: left; border-bottom: 2px solid #ddd; color: #5f6368; }
+        td { padding: 12px; border-bottom: 1px solid #ddd; }
+        .row-lucro { background-color: #e6f4ea; }
+        .row-prejuizo { background-color: #fce8e6; }
+        .alerta-correcao { color: #d93025; font-weight: bold; font-size: 12px; display: block; margin-top: 4px; }
         .hidden { display: none; }
-        
-        /* Cores para a pré-visualização */
-        .color-data { color: #6c757d; font-family: monospace; }
-        .color-numero { color: #d63384; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
     <h1>📊 Calculadora IRS Cripto Pro</h1>
-    <p style="text-align: center;">Arraste os seus ficheiros CSV. O sistema detecta tipos de dados automaticamente.</p>
+    <p style="text-align: center;">Calcule as suas mais-valias (FIFO) para o Anexo J com suporte a Ledger.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-        <h3>📁 Arrastar ficheiros para aqui</h3>
-        <p>ou clique para selecionar</p>
-        <input type="file" id="file-input" multiple accept=".csv" class="hidden">
+        <h3>📁 Arrastar o ficheiro Histórico da Kraken para aqui</h3>
+        <input type="file" id="file-input" accept=".csv" class="hidden">
     </div>
 
-    <div id="results" class="file-list"></div>
+    <div id="results"></div>
+
+    <div id="action-panel" class="action-panel hidden">
+        <label style="font-size: 18px; font-weight: bold;">Qual é o ano a declarar? </label>
+        <input type="number" id="ano-irs" value="2025" min="2010" max="2100">
+        <button class="btn-calcular" onclick="executarMotorFIFO()">Gerar Tabela para o IRS</button>
+    </div>
+
+    <div id="irs-report-container" class="hidden">
+        <h2 style="margin-top: 30px; border-bottom: 2px solid #1a73e8; padding-bottom: 10px;">📋 Anexo J - Quadro 9.2.A</h2>
+        <p>Copie estas linhas diretamente para o Portal das Finanças:</p>
+        <div style="overflow-x: auto;">
+            <table id="irs-table">
+                <thead>
+                    <tr>
+                        <th>Código</th>
+                        <th>País</th>
+                        <th>Mês/Ano Realização</th>
+                        <th>Valor Realização (€)</th>
+                        <th>Mês/Ano Aquisição</th>
+                        <th>Valor Aquisição (€)</th>
+                        <th>Despesas (€)</th>
+                        <th>Moeda (Ajuda)</th>
+                    </tr>
+                </thead>
+                <tbody id="irs-tbody"></tbody>
+            </table>
+        </div>
+    </div>
 </div>
 
 <script>
-    const assinaturasConhecidas = {
-        "Kraken": ["txid", "refid", "time", "type", "asset", "amount"],
-        "Binance": ["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change"],
-        "Crypto.com": ["Timestamp (UTC)", "Transaction Description", "Currency", "Amount"]
-    };
+    let dadosGlobais = [];
 
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
-    const resultsDiv = document.getElementById('results');
 
+    // UI Drag and Drop
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e8f0fe'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.backgroundColor = '#f8f9fa'; });
     dropZone.addEventListener('drop', (e) => {
         e.preventDefault();
         dropZone.style.backgroundColor = '#f8f9fa';
-        processarFicheiros(e.dataTransfer.files);
+        lerFicheiro(e.dataTransfer.files[0]);
     });
-    fileInput.addEventListener('change', (e) => { processarFicheiros(e.target.files); });
+    fileInput.addEventListener('change', (e) => { lerFicheiro(e.target.files[0]); });
 
-    function processarFicheiros(files) {
-        resultsDiv.innerHTML = ''; 
+    function lerFicheiro(file) {
+        if(!file) return;
         
-        Array.from(files).forEach(file => {
-            const reader = new FileReader();
-            reader.onload = (e) => {
-                const linhas = e.target.result.split('\n').filter(l => l.trim() !== '');
-                const cabecalhos = linhas[0].split(',').map(c => c.replace(/"/g, '').trim());
-                
-                // Extrai uma amostra de 5 linhas para analisar os tipos de dados
-                const amostraDados = linhas.slice(1, 6).map(l => l.split(',').map(c => c.replace(/"/g, '').trim()));
-                
-                analisarFicheiro(file.name, cabecalhos, amostraDados);
-            };
-            reader.readAsText(file.slice(0, 5000)); // Lemos um pedaço maior para ter amostras de dados
+        Papa.parse(file, {
+            header: true,
+            skipEmptyLines: true,
+            complete: function(results) {
+                // Verifica se tem a assinatura da Kraken (txid, refid, time...)
+                const cols = results.meta.fields;
+                if(cols.includes('refid') && cols.includes('amount') && cols.includes('asset')) {
+                    dadosGlobais = results.data;
+                    document.getElementById('results').innerHTML = `<div class="file-item"><span>📄 <b>${file.name}</b> (${dadosGlobais.length} linhas)</span> <span>✅ Kraken Identificada</span></div>`;
+                    document.getElementById('action-panel').classList.remove('hidden');
+                    document.getElementById('irs-report-container').classList.add('hidden');
+                } else {
+                    alert("Atenção: Este ficheiro não parece ser o Histórico da Kraken.");
+                }
+            }
         });
     }
 
-    function analisarFicheiro(fileName, cabecalhos, amostraDados) {
-        let corretoraEncontrada = null;
+    function formatarData(dataIso) {
+        const d = new Date(dataIso);
+        const mes = String(d.getMonth() + 1).padStart(2, '0');
+        const ano = d.getFullYear();
+        return `${mes}/${ano}`;
+    }
 
-        for (const [corretora, assinatura] of Object.entries(assinaturasConhecidas)) {
-            if (assinatura.every(col => cabecalhos.includes(col))) {
-                corretoraEncontrada = corretora;
-                break;
+    // O CÉREBRO DA OPERAÇÃO: MOTOR FIFO EM JAVASCRIPT
+    function executarMotorFIFO() {
+        const anoIrsDesejado = parseInt(document.getElementById('ano-irs').value);
+        
+        // Ordena por data (cronologia absoluta)
+        dadosGlobais.sort((a, b) => new Date(a.time) - new Date(b.time));
+
+        // Agrupa por refid (para juntar EUR e Cripto no mesmo trade)
+        const gruposPorRefid = {};
+        dadosGlobais.forEach(row => {
+            if(!gruposPorRefid[row.refid]) gruposPorRefid[row.refid] = [];
+            gruposPorRefid[row.refid].push(row);
+        });
+
+        // Ordena os refids pela data do seu primeiro elemento
+        const refidsOrdenados = Object.keys(gruposPorRefid).sort((a, b) => new Date(gruposPorRefid[a][0].time) - new Date(gruposPorRefid[b][0].time));
+
+        let inventory = {};
+        let caixaForte = {};
+        let relatorioIRS = [];
+
+        refidsOrdenados.forEach(refid => {
+            const grupo = gruposPorRefid[refid];
+            const txType = grupo[0].type;
+            const timeStr = grupo[0].time;
+            const time = new Date(timeStr);
+
+            // A Kraken chama EUR, ZEUR, ou EUR.HOLD
+            const moedasEur = ['EUR', 'ZEUR', 'EUR.HOLD'];
+            const eurRows = grupo.filter(r => moedasEur.includes(r.asset));
+            const cryptoRows = grupo.filter(r => !moedasEur.includes(r.asset));
+
+            // --- 1. COMPRAS E VENDAS ---
+            if (txType === 'trade' && eurRows.length > 0 && cryptoRows.length > 0) {
+                const eurAmount = parseFloat(eurRows[0].amount);
+                const cryptoAmount = parseFloat(cryptoRows[0].amount);
+                const asset = cryptoRows[0].asset;
+                const feeEur = eurRows[0].fee ? parseFloat(eurRows[0].fee) : 0;
+
+                if(!inventory[asset]) inventory[asset] = [];
+
+                // COMPRA
+                if (cryptoAmount > 0 && eurAmount < 0) {
+                    const totalPago = Math.abs(eurAmount) + feeEur;
+                    const pricePerUnit = totalPago / cryptoAmount;
+                    inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Kraken' });
+                }
+                // VENDA
+                else if (cryptoAmount < 0 && eurAmount > 0) {
+                    let qtyToSell = Math.abs(cryptoAmount);
+                    const grossEur = eurAmount;
+                    let costBasis = 0;
+                    let oldestDate = null;
+                    let origens = new Set();
+
+                    while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
+                        let lote = inventory[asset][0];
+                        origens.add(lote.origin);
+                        
+                        if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
+
+                        if (lote.amount <= qtyToSell) {
+                            costBasis += lote.amount * lote.price;
+                            qtyToSell -= lote.amount;
+                            inventory[asset].shift();
+                        } else {
+                            costBasis += qtyToSell * lote.price;
+                            lote.amount -= qtyToSell;
+                            qtyToSell = 0;
+                        }
+                    }
+
+                    // Se foi no ano que estamos a calcular, adiciona à tabela final
+                    if (time.getFullYear() === anoIrsDesejado) {
+                        let strDataAquisicao = oldestDate ? formatarData(oldestDate) : formatarData(time);
+                        let valAquisicao = costBasis.toFixed(2);
+                        let alertaCusto = "";
+
+                        if (costBasis < 0.01 && origens.has("Depósito Externo")) {
+                            alertaCusto = `<span class="alerta-correcao">⚠️ CORRIGIR: Inserir dados externos</span>`;
+                            valAquisicao = "0.00";
+                        } else if (costBasis < 0.01 && origens.has("Staking")) {
+                            alertaCusto = `<span style="font-size:11px; color:#1a73e8; display:block;">(OK: Staking)</span>`;
+                        }
+
+                        const lucroReal = grossEur - costBasis - feeEur;
+
+                        relatorioIRS.push({
+                            realizacaoMesAno: formatarData(time),
+                            realizacaoVal: grossEur.toFixed(2),
+                            aquisicaoMesAno: strDataAquisicao,
+                            aquisicaoValHtml: valAquisicao + alertaCusto,
+                            despesas: feeEur.toFixed(2),
+                            moeda: asset,
+                            lucro: lucroReal
+                        });
+                    }
+                }
             }
-        }
+            // --- 2. TRANSFERÊNCIAS (LEDGER / STAKING) ---
+            else {
+                cryptoRows.forEach(row => {
+                    const asset = row.asset;
+                    const amount = parseFloat(row.amount);
+                    const subtype = row.subtype || '';
 
-        const div = document.createElement('div');
-        div.className = corretoraEncontrada ? 'file-item status-ok' : 'file-item status-warning';
+                    if(!inventory[asset]) inventory[asset] = [];
+                    if(!caixaForte[asset]) caixaForte[asset] = [];
 
-        if (corretoraEncontrada) {
-            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>✅ Reconhecido: ${corretoraEncontrada}</span>`;
-        } else {
-            // MOTOR DE INFERÊNCIA DE TIPOS
-            let colunasData = [];
-            let colunasNumericas = [];
-            let colunasTexto = [];
-
-            cabecalhos.forEach((cabecalho, index) => {
-                let eNumero = true;
-                let eData = false;
-
-                amostraDados.forEach(linha => {
-                    let valor = linha[index];
-                    if (!valor) return;
-                    
-                    // Testa se é número (aceita pontos ou vírgulas e sinais de menos)
-                    if (isNaN(parseFloat(valor.replace(',', '.')))) eNumero = false;
-                    
-                    // Testa se parece uma data (tem barras, hífens ou dois pontos e números longos)
-                    if (valor.length > 8 && (valor.includes('-') || valor.includes('/') || valor.includes(':')) && !isNaN(Date.parse(valor))) {
-                        eData = true;
+                    // SAÍDA PARA LEDGER/STAKING (Guardar na Caixa Forte)
+                    if (amount < 0) {
+                        let qtyToRemove = Math.abs(amount);
+                        while (qtyToRemove > 1e-8 && inventory[asset].length > 0) {
+                            let lote = inventory[asset][0];
+                            if (lote.amount <= qtyToRemove) {
+                                caixaForte[asset].push({ amount: lote.amount, price: lote.price, date: lote.date, origin: lote.origin });
+                                qtyToRemove -= lote.amount;
+                                inventory[asset].shift();
+                            } else {
+                                caixaForte[asset].push({ amount: qtyToRemove, price: lote.price, date: lote.date, origin: lote.origin });
+                                lote.amount -= qtyToRemove;
+                                qtyToRemove = 0;
+                            }
+                        }
+                    }
+                    // ENTRADA
+                    else if (amount > 0) {
+                        if (subtype === 'reward') {
+                            inventory[asset].push({ amount: amount, price: 0.0, date: time, origin: 'Staking' });
+                        } else {
+                            let qtyToAdd = amount;
+                            // Tenta ir buscar à Caixa Forte primeiro
+                            while (qtyToAdd > 1e-8 && caixaForte[asset].length > 0) {
+                                let lote = caixaForte[asset][0];
+                                if (lote.amount <= qtyToAdd) {
+                                    inventory[asset].push({ amount: lote.amount, price: lote.price, date: lote.date, origin: lote.origin });
+                                    qtyToAdd -= lote.amount;
+                                    caixaForte[asset].shift();
+                                } else {
+                                    inventory[asset].push({ amount: qtyToAdd, price: lote.price, date: lote.date, origin: lote.origin });
+                                    lote.amount -= qtyToAdd;
+                                    qtyToAdd = 0;
+                                }
+                            }
+                            // O excesso (veio de outra exchange)
+                            if (qtyToAdd > 1e-8) {
+                                inventory[asset].push({ amount: qtyToAdd, price: 0.0, date: time, origin: 'Depósito Externo' });
+                            }
+                        }
                     }
                 });
+            }
+        });
 
-                if (eData) colunasData.push(cabecalho);
-                else if (eNumero) colunasNumericas.push(cabecalho);
-                else colunasTexto.push(cabecalho);
-            });
+        desenharTabela(relatorioIRS, anoIrsDesejado);
+    }
 
-            // Constrói a interface de salvamento com as opções restritas
-            div.innerHTML = `
-                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
-                    <span>📄 <b>${fileName}</b></span> <span>⚠️ Necessita Ajuda (Formato Novo)</span>
-                </div>
-                <p style="font-size: 0.9em; color: #666;">Analisei os dados. Por favor, diz-me que coluna corresponde a cada campo:</p>
+    function desenharTabela(linhas, ano) {
+        const tbody = document.getElementById('irs-tbody');
+        tbody.innerHTML = '';
+        const container = document.getElementById('irs-report-container');
+
+        if (linhas.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="8" style="text-align:center; padding: 20px;">Não foram encontradas vendas a euros no ano ${ano}.</td></tr>`;
+        } else {
+            linhas.forEach(linha => {
+                const tr = document.createElement('tr');
+                // Pinta a linha de Verde (Lucro) ou Vermelho (Prejuízo)
+                tr.className = linha.lucro > 0 ? 'row-lucro' : 'row-prejuizo';
                 
-                <div class="mapping-box">
-                    <div class="mapping-row">
-                        <label>📅 Data e Hora:</label>
-                        <select id="map-data-${fileName}">
-                            <option value="">-- Escolher Data --</option>
-                            ${colunasData.map(c => `<option value="${c}">${c} (Parece Data)</option>`).join('')}
-                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
-                        </select>
-                    </div>
-                    
-                    <div class="mapping-row">
-                        <label>💶 Quantidade (Moeda):</label>
-                        <select id="map-qtd-${fileName}">
-                            <option value="">-- Escolher Número --</option>
-                            ${colunasNumericas.map(c => `<option value="${c}">${c} <span class="color-numero">(Numérico)</span></option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div class="mapping-row">
-                        <label>🪙 Ativo (Ex: ADA, BTC):</label>
-                        <select id="map-ativo-${fileName}">
-                            <option value="">-- Escolher Moeda --</option>
-                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <div class="mapping-row">
-                        <label>🔄 Tipo (Compra/Venda):</label>
-                        <select id="map-tipo-${fileName}">
-                            <option value="">-- Escolher Operação --</option>
-                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
-                        </select>
-                    </div>
-
-                    <button class="btn-salvar" onclick="alert('Mapeamento guardado para ${fileName}! (A lógica de processar vem a seguir)')">Aceitar e Mapear Ficheiro</button>
-                </div>
-            `;
+                tr.innerHTML = `
+                    <td><b>G20</b></td>
+                    <td>840</td>
+                    <td>${linha.realizacaoMesAno}</td>
+                    <td><b>${linha.realizacaoVal}</b></td>
+                    <td>${linha.aquisicaoMesAno}</td>
+                    <td>${linha.aquisicaoValHtml}</td>
+                    <td>${linha.despesas}</td>
+                    <td>${linha.moeda}</td>
+                `;
+                tbody.appendChild(tr);
+            });
         }
-        resultsDiv.appendChild(div);
+        
+        container.classList.remove('hidden');
     }
 </script>
 
