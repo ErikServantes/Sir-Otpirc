@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora IRS Cripto</title>
+    <title>Calculadora IRS Cripto Pro</title>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
         .container { background-color: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); }
@@ -11,17 +11,28 @@
         .upload-area { border: 2px dashed #1a73e8; border-radius: 10px; padding: 40px; text-align: center; cursor: pointer; background-color: #f8f9fa; transition: background 0.3s; margin-bottom: 20px; }
         .upload-area:hover { background-color: #e8f0fe; }
         .file-list { margin-top: 20px; }
-        .file-item { padding: 10px; margin: 5px 0; border-radius: 5px; display: flex; justify-content: space-between; align-items: center; }
-        .status-ok { background-color: #d4edda; border-left: 5px solid #28a745; }
+        .file-item { padding: 15px; margin: 10px 0; border-radius: 5px; border: 1px solid #ddd; }
+        .status-ok { background-color: #d4edda; border-left: 5px solid #28a745; display: flex; justify-content: space-between; }
         .status-warning { background-color: #fff3cd; border-left: 5px solid #ffc107; }
+        
+        /* Estilos do Formulário de Ajuda */
+        .mapping-box { margin-top: 15px; padding: 15px; background: white; border-radius: 8px; border: 1px solid #ccc; }
+        .mapping-row { display: flex; justify-content: space-between; margin-bottom: 10px; align-items: center; }
+        select { padding: 8px; border-radius: 4px; border: 1px solid #ccc; width: 60%; }
+        .btn-salvar { background: #1a73e8; color: white; border: none; padding: 10px 20px; border-radius: 5px; cursor: pointer; width: 100%; font-weight: bold; margin-top: 10px; }
+        .btn-salvar:hover { background: #1557b0; }
         .hidden { display: none; }
+        
+        /* Cores para a pré-visualização */
+        .color-data { color: #6c757d; font-family: monospace; }
+        .color-numero { color: #d63384; font-weight: bold; }
     </style>
 </head>
 <body>
 
 <div class="container">
-    <h1>📊 Calculadora IRS Cripto</h1>
-    <p style="text-align: center;">Arraste os seus ficheiros CSV (Kraken, Binance, Crypto.com, etc.)</p>
+    <h1>📊 Calculadora IRS Cripto Pro</h1>
+    <p style="text-align: center;">Arraste os seus ficheiros CSV. O sistema detecta tipos de dados automaticamente.</p>
 
     <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
         <h3>📁 Arrastar ficheiros para aqui</h3>
@@ -33,7 +44,6 @@
 </div>
 
 <script>
-    // 1. A NOSSA MEMÓRIA (Dicionário de Assinaturas)
     const assinaturasConhecidas = {
         "Kraken": ["txid", "refid", "time", "type", "asset", "amount"],
         "Binance": ["User_ID", "UTC_Time", "Account", "Operation", "Coin", "Change"],
@@ -44,7 +54,6 @@
     const fileInput = document.getElementById('file-input');
     const resultsDiv = document.getElementById('results');
 
-    // Funcionalidade de arrastar e largar
     dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.style.backgroundColor = '#e8f0fe'; });
     dropZone.addEventListener('dragleave', () => { dropZone.style.backgroundColor = '#f8f9fa'; });
     dropZone.addEventListener('drop', (e) => {
@@ -54,47 +63,111 @@
     });
     fileInput.addEventListener('change', (e) => { processarFicheiros(e.target.files); });
 
-    // 2. FUNÇÃO PRINCIPAL: LER O FICHEIRO E RECONHECER
     function processarFicheiros(files) {
-        resultsDiv.innerHTML = ''; // Limpa resultados anteriores
+        resultsDiv.innerHTML = ''; 
         
         Array.from(files).forEach(file => {
             const reader = new FileReader();
             reader.onload = (e) => {
-                const text = e.target.result;
-                // Pega na primeira linha (cabeçalhos) e limpa aspas e espaços
-                const primeiraLinha = text.split('\n')[0];
-                const cabecalhos = primeiraLinha.split(',').map(c => c.replace(/"/g, '').trim());
+                const linhas = e.target.result.split('\n').filter(l => l.trim() !== '');
+                const cabecalhos = linhas[0].split(',').map(c => c.replace(/"/g, '').trim());
                 
-                analisarCabecalhos(file.name, cabecalhos);
+                // Extrai uma amostra de 5 linhas para analisar os tipos de dados
+                const amostraDados = linhas.slice(1, 6).map(l => l.split(',').map(c => c.replace(/"/g, '').trim()));
+                
+                analisarFicheiro(file.name, cabecalhos, amostraDados);
             };
-            // Lemos apenas os primeiros 1000 caracteres para ser super rápido
-            reader.readAsText(file.slice(0, 1000)); 
+            reader.readAsText(file.slice(0, 5000)); // Lemos um pedaço maior para ter amostras de dados
         });
     }
 
-    // 3. O DETETIVE AUTOMÁTICO
-    function analisarCabecalhos(fileName, cabecalhos) {
+    function analisarFicheiro(fileName, cabecalhos, amostraDados) {
         let corretoraEncontrada = null;
 
-        // Procura no dicionário
         for (const [corretora, assinatura] of Object.entries(assinaturasConhecidas)) {
-            // Verifica se TODAS as colunas da assinatura existem no ficheiro
-            const isMatch = assinatura.every(col => cabecalhos.includes(col));
-            if (isMatch) {
+            if (assinatura.every(col => cabecalhos.includes(col))) {
                 corretoraEncontrada = corretora;
                 break;
             }
         }
 
-        // Desenha o resultado no ecrã
         const div = document.createElement('div');
+        div.className = corretoraEncontrada ? 'file-item status-ok' : 'file-item status-warning';
+
         if (corretoraEncontrada) {
-            div.className = 'file-item status-ok';
-            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>✅ ${corretoraEncontrada}</span>`;
+            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>✅ Reconhecido: ${corretoraEncontrada}</span>`;
         } else {
-            div.className = 'file-item status-warning';
-            div.innerHTML = `<span>📄 <b>${fileName}</b></span> <span>⚠️ Formato Desconhecido (Necessita Ajuda)</span>`;
+            // MOTOR DE INFERÊNCIA DE TIPOS
+            let colunasData = [];
+            let colunasNumericas = [];
+            let colunasTexto = [];
+
+            cabecalhos.forEach((cabecalho, index) => {
+                let eNumero = true;
+                let eData = false;
+
+                amostraDados.forEach(linha => {
+                    let valor = linha[index];
+                    if (!valor) return;
+                    
+                    // Testa se é número (aceita pontos ou vírgulas e sinais de menos)
+                    if (isNaN(parseFloat(valor.replace(',', '.')))) eNumero = false;
+                    
+                    // Testa se parece uma data (tem barras, hífens ou dois pontos e números longos)
+                    if (valor.length > 8 && (valor.includes('-') || valor.includes('/') || valor.includes(':')) && !isNaN(Date.parse(valor))) {
+                        eData = true;
+                    }
+                });
+
+                if (eData) colunasData.push(cabecalho);
+                else if (eNumero) colunasNumericas.push(cabecalho);
+                else colunasTexto.push(cabecalho);
+            });
+
+            // Constrói a interface de salvamento com as opções restritas
+            div.innerHTML = `
+                <div style="display:flex; justify-content:space-between; margin-bottom:10px;">
+                    <span>📄 <b>${fileName}</b></span> <span>⚠️ Necessita Ajuda (Formato Novo)</span>
+                </div>
+                <p style="font-size: 0.9em; color: #666;">Analisei os dados. Por favor, diz-me que coluna corresponde a cada campo:</p>
+                
+                <div class="mapping-box">
+                    <div class="mapping-row">
+                        <label>📅 Data e Hora:</label>
+                        <select id="map-data-${fileName}">
+                            <option value="">-- Escolher Data --</option>
+                            ${colunasData.map(c => `<option value="${c}">${c} (Parece Data)</option>`).join('')}
+                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
+                        </select>
+                    </div>
+                    
+                    <div class="mapping-row">
+                        <label>💶 Quantidade (Moeda):</label>
+                        <select id="map-qtd-${fileName}">
+                            <option value="">-- Escolher Número --</option>
+                            ${colunasNumericas.map(c => `<option value="${c}">${c} <span class="color-numero">(Numérico)</span></option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="mapping-row">
+                        <label>🪙 Ativo (Ex: ADA, BTC):</label>
+                        <select id="map-ativo-${fileName}">
+                            <option value="">-- Escolher Moeda --</option>
+                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <div class="mapping-row">
+                        <label>🔄 Tipo (Compra/Venda):</label>
+                        <select id="map-tipo-${fileName}">
+                            <option value="">-- Escolher Operação --</option>
+                            ${colunasTexto.map(c => `<option value="${c}">${c}</option>`).join('')}
+                        </select>
+                    </div>
+
+                    <button class="btn-salvar" onclick="alert('Mapeamento guardado para ${fileName}! (A lógica de processar vem a seguir)')">Aceitar e Mapear Ficheiro</button>
+                </div>
+            `;
         }
         resultsDiv.appendChild(div);
     }
