@@ -253,64 +253,115 @@
             const eurRows = grupo.filter(r => moedasEur.includes(r.asset));
             const cryptoRows = grupo.filter(r => !moedasEur.includes(r.asset));
 
-            if (txType === 'trade' && eurRows.length > 0 && cryptoRows.length > 0) {
-                const eurAmount = parseFloat(eurRows[0].amount);
-                const cryptoAmount = parseFloat(cryptoRows[0].amount);
-                const asset = cryptoRows[0].asset;
-                
-                const rawFeeEur = parseFloat(eurRows[0].fee || 0);
-                const rawFeeCrypto = parseFloat(cryptoRows[0].fee || 0);
+            if (txType === 'trade') {
+                // Cenário 1: Trade Fiat <-> Crypto
+                if (eurRows.length > 0 && cryptoRows.length > 0) {
+                    const eurAmount = parseFloat(eurRows[0].amount);
+                    const cryptoAmount = parseFloat(cryptoRows[0].amount);
+                    const asset = cryptoRows[0].asset;
+                    
+                    const rawFeeEur = parseFloat(eurRows[0].fee || 0);
+                    const rawFeeCrypto = parseFloat(cryptoRows[0].fee || 0);
 
-                if(!inventory[asset]) inventory[asset] = [];
+                    if(!inventory[asset]) inventory[asset] = [];
 
-                if (cryptoAmount > 0 && eurAmount < 0) {
-                    const rate = Math.abs(eurAmount) / cryptoAmount;
-                    const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
-                    const totalPago = Math.abs(eurAmount) + totalFeeEur;
-                    const pricePerUnit = totalPago / cryptoAmount;
-                    inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
-                }
-                else if (cryptoAmount < 0 && eurAmount > 0) {
-                    const rate = eurAmount / Math.abs(cryptoAmount);
-                    const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
+                    if (cryptoAmount > 0 && eurAmount < 0) {
+                        const rate = Math.abs(eurAmount) / cryptoAmount;
+                        const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
+                        const totalPago = Math.abs(eurAmount) + totalFeeEur;
+                        const pricePerUnit = totalPago / cryptoAmount;
+                        inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
+                    }
+                    else if (cryptoAmount < 0 && eurAmount > 0) {
+                        const rate = eurAmount / Math.abs(cryptoAmount);
+                        const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
 
-                    let qtyToSell = Math.abs(cryptoAmount);
-                    const grossEur = eurAmount;
-                    let costBasis = 0;
-                    let oldestDate = null;
-                    let origens = new Set();
+                        let qtyToSell = Math.abs(cryptoAmount);
+                        const grossEur = eurAmount;
+                        let costBasis = 0;
+                        let oldestDate = null;
+                        let origens = new Set();
 
-                    while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
-                        let lote = inventory[asset][0];
-                        origens.add(lote.origin);
-                        if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
+                        while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
+                            let lote = inventory[asset][0];
+                            origens.add(lote.origin);
+                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
 
-                        if (lote.amount <= qtyToSell) {
-                            costBasis += lote.amount * lote.price;
-                            qtyToSell -= lote.amount;
-                            inventory[asset].shift();
-                        } else {
-                            costBasis += qtyToSell * lote.price;
-                            lote.amount -= qtyToSell;
-                            qtyToSell = 0;
+                            if (lote.amount <= qtyToSell) {
+                                costBasis += lote.amount * lote.price;
+                                qtyToSell -= lote.amount;
+                                inventory[asset].shift();
+                            } else {
+                                costBasis += qtyToSell * lote.price;
+                                lote.amount -= qtyToSell;
+                                qtyToSell = 0;
+                            }
+                        }
+
+                        if (time.getFullYear() === anoIrsDesejado) {
+                            let dataAquisicaoReal = oldestDate ? oldestDate : time;
+                            
+                            relatorioIRSGlobal.push({
+                                realizacaoMesAno: formatarData(time),
+                                realizacaoValNum: grossEur,
+                                aquisicaoMesAno: formatarData(dataAquisicaoReal),
+                                aquisicaoValNum: costBasis,
+                                despesasNum: totalFeeEur,
+                                moeda: asset,
+                                lucro: grossEur - costBasis - totalFeeEur,
+                                timeAqusicaoMs: dataAquisicaoReal.getTime(),
+                                timeRealizacaoMs: time.getTime(),
+                                temAlertaCorrecao: (costBasis < 0.01 && origens.has("Depósito Externo")),
+                                temAlertaStaking: (costBasis < 0.01 && origens.has("Staking"))
+                            });
                         }
                     }
+                } 
+                // Cenário 2: NOVO - Trade Cripto <-> Cripto (Ex: BTC por DOGE)
+                else if (cryptoRows.length >= 2) {
+                    const rowSell = cryptoRows.find(r => parseFloat(r.amount) < 0);
+                    const rowBuy = cryptoRows.find(r => parseFloat(r.amount) > 0);
 
-                    if (time.getFullYear() === anoIrsDesejado) {
-                        let dataAquisicaoReal = oldestDate ? oldestDate : time;
+                    if (rowSell && rowBuy) {
+                        const assetSell = rowSell.asset;
+                        const qtySell = Math.abs(parseFloat(rowSell.amount));
                         
-                        relatorioIRSGlobal.push({
-                            realizacaoMesAno: formatarData(time),
-                            realizacaoValNum: grossEur,
-                            aquisicaoMesAno: formatarData(dataAquisicaoReal),
-                            aquisicaoValNum: costBasis,
-                            despesasNum: totalFeeEur,
-                            moeda: asset,
-                            lucro: grossEur - costBasis - totalFeeEur,
-                            timeAqusicaoMs: dataAquisicaoReal.getTime(),
-                            timeRealizacaoMs: time.getTime(),
-                            temAlertaCorrecao: (costBasis < 0.01 && origens.has("Depósito Externo")),
-                            temAlertaStaking: (costBasis < 0.01 && origens.has("Staking"))
+                        const assetBuy = rowBuy.asset;
+                        const qtyBuy = parseFloat(rowBuy.amount);
+
+                        let costBasisEur = 0;
+                        let oldestDate = null;
+
+                        if (!inventory[assetSell]) inventory[assetSell] = [];
+
+                        // 1. Retira a moeda velha do inventário e descobre quanto custou em EUR
+                        let qtyRemaining = qtySell;
+                        while (qtyRemaining > 1e-8 && inventory[assetSell].length > 0) {
+                            let lote = inventory[assetSell][0];
+                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
+
+                            if (lote.amount <= qtyRemaining) {
+                                costBasisEur += lote.amount * lote.price;
+                                qtyRemaining -= lote.amount;
+                                inventory[assetSell].shift();
+                            } else {
+                                costBasisEur += qtyRemaining * lote.price;
+                                lote.amount -= qtyRemaining;
+                                qtyRemaining = 0;
+                            }
+                        }
+
+                        // 2. Coloca a moeda nova no inventário com o custo e a data da moeda velha!
+                        if (!inventory[assetBuy]) inventory[assetBuy] = [];
+                        
+                        const dataHerdada = oldestDate ? oldestDate : time;
+                        const newPricePerUnit = costBasisEur / qtyBuy;
+
+                        inventory[assetBuy].push({ 
+                            amount: qtyBuy, 
+                            price: newPricePerUnit, 
+                            date: dataHerdada, 
+                            origin: 'Troca Cripto' 
                         });
                     }
                 }
@@ -455,7 +506,6 @@
             tbody.appendChild(tr);
         });
 
-        // NOVO: Atualiza o contador de linhas visível!
         document.getElementById('contador-linhas').innerText = `${linhas.length} ${linhas.length === 1 ? 'linha' : 'linhas'}`;
 
         if (!isModoAgrupado) {
