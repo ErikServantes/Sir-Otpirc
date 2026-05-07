@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora IRS Cripto Pro - Motor FIFO + Auditoria</title>
+    <title>Calculadora IRS Cripto Pro - Motor FIFO Global</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
@@ -254,15 +254,16 @@
     function formatarData(dataIso) {
         const d = new Date(dataIso);
         const usarDataCompleta = document.getElementById('check-data-completa').checked;
-        
         const dia = String(d.getDate()).padStart(2, '0');
         const mes = String(d.getMonth() + 1).padStart(2, '0');
         const ano = d.getFullYear();
-
-        if (usarDataCompleta) {
-            return `${ano}-${mes}-${dia}`;
-        } else {
-            return `${mes}/${ano}`;
+        return usarDataCompleta ? `${ano}-${mes}-${dia}` : `${mes}/${ano}`;
+    }
+    
+    // Função utilitária para garantir sempre ordenação estrita das datas
+    function garantirOrdemCronologica(lotesArray) {
+        if (lotesArray) {
+            lotesArray.sort((a, b) => a.date - b.date);
         }
     }
 
@@ -272,15 +273,11 @@
 
         const gruposPorRefid = {};
         dadosGlobais.forEach(row => {
-            // CORREÇÃO CRÍTICA DO BUG DAS DATAS:
-            // Combina o RefID com o Timestamp exato. Isto impede que recompensas de staking de semanas 
-            // diferentes se aglomerem num único bloco temporal, destruindo o FIFO.
             const chaveGrupo = (row.refid && row.refid.trim() !== '') ? `${row.refid}_${row.time}` : `UNICO_${Math.random()}`;
             if(!gruposPorRefid[chaveGrupo]) gruposPorRefid[chaveGrupo] = [];
             gruposPorRefid[chaveGrupo].push(row);
         });
 
-        // Ordena os grupos pela data da sua transação
         const refidsOrdenados = Object.keys(gruposPorRefid).sort((a, b) => new Date(gruposPorRefid[a][0].time) - new Date(gruposPorRefid[b][0].time));
 
         let inventory = {};
@@ -297,6 +294,24 @@
 
         refidsOrdenados.forEach(refid => {
             const grupo = gruposPorRefid[refid];
+            
+            // ==========================================
+            // FIX: ANULAR TRANSFERÊNCIAS INTERNAS (EARN <-> SPOT)
+            // ==========================================
+            let assetNet = {};
+            grupo.forEach(r => {
+                assetNet[r.asset] = (assetNet[r.asset] || 0) + parseFloat(r.amount);
+            });
+            const hasEur = grupo.some(r => ['EUR', 'ZEUR', 'EUR.HOLD'].includes(r.asset));
+            const allCryptoZero = Object.values(assetNet).every(net => Math.abs(net) < 1e-8);
+            
+            // Se o grupo é puramente cripto e a soma líquida for 0, é uma transferência interna!
+            // Ignoramos a transferência para que as moedas nunca saiam do "inventário global" e o FIFO não se perca.
+            if (!hasEur && allCryptoZero && grupo.length >= 2) {
+                return; // ⏭️ Passa à frente
+            }
+            // ==========================================
+
             const txType = (grupo[0].type || '').toLowerCase();
             const time = new Date(grupo[0].time);
 
@@ -322,6 +337,7 @@
                         const totalPago = Math.abs(eurAmount) + totalFeeEur;
                         const pricePerUnit = totalPago / cryptoAmount;
                         inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
+                        garantirOrdemCronologica(inventory[asset]);
                     }
                     else if (cryptoAmount < 0 && eurAmount > 0) {
                         const rate = eurAmount / Math.abs(cryptoAmount);
@@ -337,9 +353,7 @@
                         const cryptoOriginalVendido = Math.abs(cryptoAmount);
                         const eurGrossTotal = eurAmount;
 
-                        // REDE DE SEGURANÇA FIFO: 
-                        // Forçamos a ordenação cronológica do baú antes de tirar qualquer fatia
-                        inventory[asset].sort((a, b) => a.date - b.date);
+                        garantirOrdemCronologica(inventory[asset]); // Força absoluta
 
                         while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
@@ -386,7 +400,6 @@
                     if (rowSell && rowBuy) {
                         const assetSell = rowSell.asset;
                         const qtySell = Math.abs(parseFloat(rowSell.amount));
-                        
                         const assetBuy = rowBuy.asset;
                         const qtyBuy = parseFloat(rowBuy.amount);
 
@@ -394,9 +407,7 @@
                         let oldestDate = null;
 
                         if (!inventory[assetSell]) inventory[assetSell] = [];
-                        
-                        // Segurança FIFO
-                        inventory[assetSell].sort((a, b) => a.date - b.date);
+                        garantirOrdemCronologica(inventory[assetSell]);
 
                         let qtyRemaining = qtySell;
                         while (qtyRemaining > 1e-8 && inventory[assetSell].length > 0) {
@@ -415,16 +426,11 @@
                         }
 
                         if (!inventory[assetBuy]) inventory[assetBuy] = [];
-                        
                         const dataHerdada = oldestDate ? oldestDate : time;
                         const newPricePerUnit = costBasisEur / qtyBuy;
 
-                        inventory[assetBuy].push({ 
-                            amount: qtyBuy, 
-                            price: newPricePerUnit, 
-                            date: dataHerdada, 
-                            origin: 'Troca Cripto' 
-                        });
+                        inventory[assetBuy].push({ amount: qtyBuy, price: newPricePerUnit, date: dataHerdada, origin: 'Troca Cripto' });
+                        garantirOrdemCronologica(inventory[assetBuy]);
                     }
                 }
             }
@@ -436,9 +442,7 @@
                     if(!caixaForte[asset]) caixaForte[asset] = [];
 
                     if (amount < 0) {
-                        // Segurança FIFO
-                        inventory[asset].sort((a, b) => a.date - b.date);
-                        
+                        garantirOrdemCronologica(inventory[asset]);
                         let qtyToRemove = Math.abs(amount);
                         while (qtyToRemove > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
@@ -452,10 +456,13 @@
                                 qtyToRemove = 0;
                             }
                         }
+                        garantirOrdemCronologica(caixaForte[asset]);
                     } else if (amount > 0) {
                         if (row.subtype === 'reward') {
                             inventory[asset].push({ amount: amount, price: 0.0, date: time, origin: 'Staking' });
+                            garantirOrdemCronologica(inventory[asset]);
                         } else {
+                            garantirOrdemCronologica(caixaForte[asset]);
                             let qtyToAdd = amount;
                             while (qtyToAdd > 1e-8 && caixaForte[asset].length > 0) {
                                 let lote = caixaForte[asset][0];
@@ -469,7 +476,10 @@
                                     qtyToAdd = 0;
                                 }
                             }
-                            if (qtyToAdd > 1e-8) inventory[asset].push({ amount: qtyToAdd, price: 0.0, date: time, origin: 'Depósito Externo' });
+                            if (qtyToAdd > 1e-8) {
+                                inventory[asset].push({ amount: qtyToAdd, price: 0.0, date: time, origin: 'Depósito Externo' });
+                            }
+                            garantirOrdemCronologica(inventory[asset]);
                         }
                     }
                 });
@@ -482,7 +492,6 @@
 
     function validarCalculos(relatorioFinal) {
         const painelValidacao = document.getElementById('painel-validacao');
-        
         let somaRealizacaoReport = 0;
         let somaDespesasReport = 0;
         
@@ -500,17 +509,13 @@
             painelValidacao.className = "validacao-ok";
             painelValidacao.innerHTML = `✅ <b>Prova dos 9 (Auditoria Interna): Sucesso Absoluto!</b><br>
                 <span style="font-weight: normal; font-size: 14px; display: block; margin-top: 8px;">
-                O motor encontrou <b>${totalLinhasRawVenda}</b> transações brutas de venda a Euros neste ano. 
-                Ao aplicar a regra FIFO cronológica, essas transações foram desdobradas em <b>${relatorioFinal.length}</b> linhas no relatório, sem falhas.<br><br>
-                <b>Reconciliação:</b><br>
-                Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b>
+                Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b><br>
+                O FIFO Global desdobrou perfeitamente as vendas em <b>${relatorioFinal.length}</b> linhas cronológicas.
                 </span>`;
         } else {
             painelValidacao.className = "validacao-erro";
             painelValidacao.innerHTML = `❌ <b>Prova dos 9 (Auditoria Interna): Inconsistência Detetada!</b><br>
                 <span style="font-weight: normal; font-size: 14px; display: block; margin-top: 8px;">
-                Os dados reportados no Anexo J não batem certo com a soma crua dos ficheiros originais. Isto ocorre quando moedas são vendidas sem nunca terem dado entrada (depósito/compra).<br><br>
-                <b>Reconciliação:</b><br>
                 Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b>
                 </span>`;
         }
@@ -630,7 +635,6 @@
     function copiarTabela() {
         const table = document.getElementById('irs-table');
         let textToCopy = "";
-        
         for (let i = 0; i < table.rows.length; i++) {
             let row = table.rows[i];
             let rowData = [];
@@ -640,15 +644,12 @@
             }
             textToCopy += rowData.join("\t") + "\n";
         }
-
         navigator.clipboard.writeText(textToCopy).then(() => {
             const btn = document.getElementById('btn-copiar');
             const originalText = btn.innerHTML;
             const originalColor = btn.style.background;
-            
             btn.innerHTML = "✅ Copiado!";
             btn.style.background = "#28a745"; 
-            
             setTimeout(() => {
                 btn.innerHTML = originalText;
                 btn.style.background = originalColor;
@@ -661,7 +662,6 @@
     function exportarExcel() {
         const table = document.getElementById('irs-table');
         let csvContent = "\uFEFF"; 
-        
         for (let i = 0; i < table.rows.length; i++) {
             let row = table.rows[i];
             let rowData = [];
@@ -671,11 +671,9 @@
             }
             csvContent += rowData.join(";") + "\n"; 
         }
-
         const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
         const link = document.createElement("a");
         const url = URL.createObjectURL(blob);
-        
         const ano = document.getElementById('ano-irs').value;
         const modo = modoAgrupado ? 'Agrupado' : 'Completo';
         const formatoData = document.getElementById('check-data-completa').checked ? 'Datas_Exatas' : 'Datas_Mes_Ano';
