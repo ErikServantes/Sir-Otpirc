@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora IRS Cripto Pro</title>
+    <title>Calculadora IRS Cripto Pro - Datas Detalhadas</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
@@ -85,13 +85,13 @@
         </div>
 
         <div class="area-botoes-tabela">
-            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
+            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas por Dia (Modo Finanças)</button>
             <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
             <button id="btn-excel" class="btn-excel" onclick="exportarExcel()">📥 Exportar para Excel</button>
         </div>
 
         <div class="header-tabela">
-            <h2>📋 Anexo J - Quadro 9.2.A</h2>
+            <h2>📋 Anexo J - Quadro 9.2.A (Datas Detalhadas)</h2>
             <span id="contador-linhas" class="contador-linhas">0 linhas</span>
         </div>
         
@@ -101,9 +101,9 @@
                     <tr>
                         <th>Código</th>
                         <th>País</th>
-                        <th>Mês/Ano Realização</th>
+                        <th>Data Realização</th>
                         <th>Valor Realização (€)</th>
-                        <th>Mês/Ano Aquisição</th>
+                        <th>Data Aquisição</th>
                         <th>Valor Aquisição (€)</th>
                         <th>Despesas (€)</th>
                         <th>Moeda (Ajuda)</th>
@@ -220,9 +220,13 @@
         });
     }
 
-    function formatarData(dataIso) {
+    // NOVA FUNÇÃO: Formatar para Data Exata (AAAA-MM-DD)
+    function formatarDataCompleta(dataIso) {
         const d = new Date(dataIso);
-        return `${String(d.getMonth() + 1).padStart(2, '0')}/${d.getFullYear()}`;
+        const dia = String(d.getDate()).padStart(2, '0');
+        const mes = String(d.getMonth() + 1).padStart(2, '0');
+        const ano = d.getFullYear();
+        return `${ano}-${mes}-${dia}`;
     }
 
     function executarMotorFIFO() {
@@ -241,7 +245,7 @@
         let caixaForte = {};
         relatorioIRSGlobal = [];
         modoAgrupado = false; 
-        document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
+        document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas por Dia (Modo Finanças)";
         document.getElementById('btn-agrupar').style.background = "#34a853";
 
         refidsOrdenados.forEach(refid => {
@@ -301,10 +305,11 @@
                         if (time.getFullYear() === anoIrsDesejado) {
                             let dataAquisicaoReal = oldestDate ? oldestDate : time;
                             
+                            // AQUI: Atualizado para gravar as datas exatas
                             relatorioIRSGlobal.push({
-                                realizacaoMesAno: formatarData(time),
+                                realizacaoData: formatarDataCompleta(time),
                                 realizacaoValNum: grossEur,
-                                aquisicaoMesAno: formatarData(dataAquisicaoReal),
+                                aquisicaoData: formatarDataCompleta(dataAquisicaoReal),
                                 aquisicaoValNum: costBasis,
                                 despesasNum: totalFeeEur,
                                 moeda: asset,
@@ -422,13 +427,14 @@
             let linhasAgrupadas = {};
             
             relatorioIRSGlobal.forEach(linha => {
-                const chave = `${linha.moeda}_${linha.aquisicaoMesAno}_${linha.realizacaoMesAno}`;
+                // AQUI: A chave de agrupamento agora exige que a moeda, data de aquisição EXATA e data de realização EXATA sejam idênticas.
+                const chave = `${linha.moeda}_${linha.aquisicaoData}_${linha.realizacaoData}`;
                 
                 if (!linhasAgrupadas[chave]) {
                     linhasAgrupadas[chave] = {
-                        realizacaoMesAno: linha.realizacaoMesAno,
+                        realizacaoData: linha.realizacaoData,
                         realizacaoValNum: 0,
-                        aquisicaoMesAno: linha.aquisicaoMesAno,
+                        aquisicaoData: linha.aquisicaoData,
                         aquisicaoValNum: 0,
                         despesasNum: 0,
                         moeda: linha.moeda,
@@ -452,7 +458,7 @@
             desenharTabela(Object.values(linhasAgrupadas), true);
             
         } else {
-            btn.innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
+            btn.innerHTML = "🗜️ Agrupar Linhas por Dia (Modo Finanças)";
             btn.style.background = "#34a853"; 
             desenharTabela(relatorioIRSGlobal, false);
         }
@@ -490,12 +496,14 @@
 
             const tr = document.createElement('tr');
             tr.className = linha.lucro >= 0 ? 'row-lucro' : 'row-prejuizo';
+            
+            // AQUI: Renderiza as datas exatas
             tr.innerHTML = `
                 <td>G20</td>
                 <td>840</td>
-                <td>${linha.realizacaoMesAno}</td>
+                <td>${linha.realizacaoData}</td>
                 <td>${linha.realizacaoValNum.toFixed(2)}</td>
-                <td>${linha.aquisicaoMesAno}</td>
+                <td>${linha.aquisicaoData}</td>
                 <td>${valAquisicaoHtml} ${alertaHtml}</td>
                 <td>${linha.despesasNum.toFixed(2)}</td>
                 <td>${linha.moeda}</td>
