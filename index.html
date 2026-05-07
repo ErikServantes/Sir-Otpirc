@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora IRS Cripto Pro - Datas Detalhadas</title>
+    <title>Calculadora IRS Cripto Pro - Motor FIFO Rigoroso</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
@@ -16,7 +16,12 @@
         .action-panel { background: #f8f9fa; padding: 20px; border-radius: 8px; margin-top: 20px; text-align: center; border: 1px solid #e0e0e0; }
         
         input[type="number"] { padding: 10px; font-size: 16px; width: 100px; border: 1px solid #ccc; border-radius: 5px; margin-right: 15px; }
-        .btn-calcular { background: #1a73e8; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 5px; cursor: pointer; font-weight: bold; }
+        
+        .opcoes-container { margin: 15px 0; padding: 10px; background: #e8f0fe; border-radius: 5px; display: inline-block; }
+        .opcoes-container label { cursor: pointer; font-size: 15px; font-weight: bold; color: #1a73e8; user-select: none; display: flex; align-items: center; gap: 8px; }
+        .opcoes-container input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+
+        .btn-calcular { background: #1a73e8; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 5px; cursor: pointer; font-weight: bold; display: block; margin: 10px auto 0 auto; }
         .btn-calcular:hover { background: #1557b0; }
         
         .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
@@ -63,8 +68,18 @@
     <div id="results-list" class="file-list"></div>
 
     <div id="action-panel" class="action-panel hidden">
-        <label style="font-size: 18px; font-weight: bold;">Qual é o ano a declarar? </label>
-        <input type="number" id="ano-irs" value="2025" min="2010" max="2100">
+        <div>
+            <label style="font-size: 18px; font-weight: bold;">Qual é o ano a declarar? </label>
+            <input type="number" id="ano-irs" value="2025" min="2010" max="2100" onchange="recalcularSeNecessario()">
+        </div>
+        
+        <div class="opcoes-container">
+            <label title="Ative para ver os dias exatos. Desative para o formato oficial (Mês/Ano) que agrupa mais as vendas.">
+                <input type="checkbox" id="check-data-completa" checked onchange="recalcularSeNecessario()"> 
+                Mostrar datas exatas detalhadas (AAAA-MM-DD)
+            </label>
+        </div>
+
         <button class="btn-calcular" onclick="executarMotorFIFO()">Juntar Dados e Gerar IRS</button>
     </div>
 
@@ -85,13 +100,13 @@
         </div>
 
         <div class="area-botoes-tabela">
-            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas por Dia (Modo Finanças)</button>
+            <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
             <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
             <button id="btn-excel" class="btn-excel" onclick="exportarExcel()">📥 Exportar para Excel</button>
         </div>
 
         <div class="header-tabela">
-            <h2>📋 Anexo J - Quadro 9.2.A (Datas Detalhadas)</h2>
+            <h2>📋 Anexo J - Quadro 9.2.A</h2>
             <span id="contador-linhas" class="contador-linhas">0 linhas</span>
         </div>
         
@@ -101,9 +116,9 @@
                     <tr>
                         <th>Código</th>
                         <th>País</th>
-                        <th>Data Realização</th>
+                        <th id="th-realizacao">Mês/Ano Realização</th>
                         <th>Valor Realização (€)</th>
-                        <th>Data Aquisição</th>
+                        <th id="th-aquisicao">Mês/Ano Aquisição</th>
                         <th>Valor Aquisição (€)</th>
                         <th>Despesas (€)</th>
                         <th>Moeda (Ajuda)</th>
@@ -220,13 +235,25 @@
         });
     }
 
-    // NOVA FUNÇÃO: Formatar para Data Exata (AAAA-MM-DD)
-    function formatarDataCompleta(dataIso) {
+    function recalcularSeNecessario() {
+        if (relatorioIRSGlobal.length > 0) {
+            executarMotorFIFO();
+        }
+    }
+
+    function formatarData(dataIso) {
         const d = new Date(dataIso);
+        const usarDataCompleta = document.getElementById('check-data-completa').checked;
+        
         const dia = String(d.getDate()).padStart(2, '0');
         const mes = String(d.getMonth() + 1).padStart(2, '0');
         const ano = d.getFullYear();
-        return `${ano}-${mes}-${dia}`;
+
+        if (usarDataCompleta) {
+            return `${ano}-${mes}-${dia}`;
+        } else {
+            return `${mes}/${ano}`;
+        }
     }
 
     function executarMotorFIFO() {
@@ -245,7 +272,7 @@
         let caixaForte = {};
         relatorioIRSGlobal = [];
         modoAgrupado = false; 
-        document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas por Dia (Modo Finanças)";
+        document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
         document.getElementById('btn-agrupar').style.background = "#34a853";
 
         refidsOrdenados.forEach(refid => {
@@ -269,6 +296,7 @@
 
                     if(!inventory[asset]) inventory[asset] = [];
 
+                    // Compra Cripto (Paga EUR, Recebe Cripto)
                     if (cryptoAmount > 0 && eurAmount < 0) {
                         const rate = Math.abs(eurAmount) / cryptoAmount;
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
@@ -276,52 +304,57 @@
                         const pricePerUnit = totalPago / cryptoAmount;
                         inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                     }
+                    // Venda Cripto (Paga Cripto, Recebe EUR) - ONDE A MAGIA ACONTECE (DESDOBRAMENTO)
                     else if (cryptoAmount < 0 && eurAmount > 0) {
                         const rate = eurAmount / Math.abs(cryptoAmount);
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
 
                         let qtyToSell = Math.abs(cryptoAmount);
-                        const grossEur = eurAmount;
-                        let costBasis = 0;
-                        let oldestDate = null;
-                        let origens = new Set();
+                        const cryptoOriginalVendido = Math.abs(cryptoAmount); // Guardado para fazer a proporção
+                        const eurGrossTotal = eurAmount;
 
+                        // Desdobramento: Processamos lote a lote até abater tudo o que foi vendido
                         while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
-                            origens.add(lote.origin);
-                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
+                            let qtyConsumidaNesteLote = 0;
 
                             if (lote.amount <= qtyToSell) {
-                                costBasis += lote.amount * lote.price;
-                                qtyToSell -= lote.amount;
-                                inventory[asset].shift();
+                                qtyConsumidaNesteLote = lote.amount;
+                                inventory[asset].shift(); // Remove lote esgotado
                             } else {
-                                costBasis += qtyToSell * lote.price;
-                                lote.amount -= qtyToSell;
-                                qtyToSell = 0;
+                                qtyConsumidaNesteLote = qtyToSell;
+                                lote.amount -= qtyToSell; // Atualiza o que sobra no lote
                             }
-                        }
 
-                        if (time.getFullYear() === anoIrsDesejado) {
-                            let dataAquisicaoReal = oldestDate ? oldestDate : time;
+                            // 1. Calcular a percentagem desta venda que corresponde a este lote
+                            const proporcao = qtyConsumidaNesteLote / cryptoOriginalVendido;
+
+                            // 2. Distribuir os valores de Realização e Custos proporcionalmente
+                            const grossEurDesdobrado = eurGrossTotal * proporcao;
+                            const feeEurDesdobrado = totalFeeEur * proporcao;
+                            const costBasisDesdobrado = qtyConsumidaNesteLote * lote.price;
+
+                            if (time.getFullYear() === anoIrsDesejado) {
+                                relatorioIRSGlobal.push({
+                                    realizacaoDataStr: formatarData(time),
+                                    realizacaoValNum: grossEurDesdobrado,
+                                    aquisicaoDataStr: formatarData(lote.date), // USA A DATA EXATA DESTE LOTE!
+                                    aquisicaoValNum: costBasisDesdobrado,
+                                    despesasNum: feeEurDesdobrado,
+                                    moeda: asset,
+                                    lucro: grossEurDesdobrado - costBasisDesdobrado - feeEurDesdobrado,
+                                    timeAqusicaoMs: lote.date.getTime(),
+                                    timeRealizacaoMs: time.getTime(),
+                                    temAlertaCorrecao: (costBasisDesdobrado < 0.01 && lote.origin === "Depósito Externo"),
+                                    temAlertaStaking: (costBasisDesdobrado < 0.01 && lote.origin === "Staking")
+                                });
+                            }
                             
-                            // AQUI: Atualizado para gravar as datas exatas
-                            relatorioIRSGlobal.push({
-                                realizacaoData: formatarDataCompleta(time),
-                                realizacaoValNum: grossEur,
-                                aquisicaoData: formatarDataCompleta(dataAquisicaoReal),
-                                aquisicaoValNum: costBasis,
-                                despesasNum: totalFeeEur,
-                                moeda: asset,
-                                lucro: grossEur - costBasis - totalFeeEur,
-                                timeAqusicaoMs: dataAquisicaoReal.getTime(),
-                                timeRealizacaoMs: time.getTime(),
-                                temAlertaCorrecao: (costBasis < 0.01 && origens.has("Depósito Externo")),
-                                temAlertaStaking: (costBasis < 0.01 && origens.has("Staking"))
-                            });
+                            qtyToSell -= qtyConsumidaNesteLote;
                         }
                     }
                 } 
+                // Troca Cripto por Cripto
                 else if (cryptoRows.length >= 2) {
                     const rowSell = cryptoRows.find(r => parseFloat(r.amount) < 0);
                     const rowBuy = cryptoRows.find(r => parseFloat(r.amount) > 0);
@@ -338,10 +371,12 @@
 
                         if (!inventory[assetSell]) inventory[assetSell] = [];
 
+                        // Como as trocas cripto-cripto não geram linha no IRS em Portugal (são isentas no momento da troca),
+                        // nós apenas consumimos as fatias antigas e transferimos o custo/data média para a nova cripto
                         let qtyRemaining = qtySell;
                         while (qtyRemaining > 1e-8 && inventory[assetSell].length > 0) {
                             let lote = inventory[assetSell][0];
-                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date;
+                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date; // Preserva antiguidade da carteira
 
                             if (lote.amount <= qtyRemaining) {
                                 costBasisEur += lote.amount * lote.price;
@@ -427,14 +462,13 @@
             let linhasAgrupadas = {};
             
             relatorioIRSGlobal.forEach(linha => {
-                // AQUI: A chave de agrupamento agora exige que a moeda, data de aquisição EXATA e data de realização EXATA sejam idênticas.
-                const chave = `${linha.moeda}_${linha.aquisicaoData}_${linha.realizacaoData}`;
+                const chave = `${linha.moeda}_${linha.aquisicaoDataStr}_${linha.realizacaoDataStr}`;
                 
                 if (!linhasAgrupadas[chave]) {
                     linhasAgrupadas[chave] = {
-                        realizacaoData: linha.realizacaoData,
+                        realizacaoDataStr: linha.realizacaoDataStr,
                         realizacaoValNum: 0,
-                        aquisicaoData: linha.aquisicaoData,
+                        aquisicaoDataStr: linha.aquisicaoDataStr,
                         aquisicaoValNum: 0,
                         despesasNum: 0,
                         moeda: linha.moeda,
@@ -458,7 +492,7 @@
             desenharTabela(Object.values(linhasAgrupadas), true);
             
         } else {
-            btn.innerHTML = "🗜️ Agrupar Linhas por Dia (Modo Finanças)";
+            btn.innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
             btn.style.background = "#34a853"; 
             desenharTabela(relatorioIRSGlobal, false);
         }
@@ -468,6 +502,10 @@
         const tbody = document.getElementById('irs-tbody');
         tbody.innerHTML = '';
         
+        const usarDataCompleta = document.getElementById('check-data-completa').checked;
+        document.getElementById('th-realizacao').innerText = usarDataCompleta ? "Data Realização" : "Mês/Ano Realização";
+        document.getElementById('th-aquisicao').innerText = usarDataCompleta ? "Data Aquisição" : "Mês/Ano Aquisição";
+
         let balancoTotal = 0;
         let balancoTributavel = 0;
         const msPorDia = 1000 * 60 * 60 * 24;
@@ -497,13 +535,12 @@
             const tr = document.createElement('tr');
             tr.className = linha.lucro >= 0 ? 'row-lucro' : 'row-prejuizo';
             
-            // AQUI: Renderiza as datas exatas
             tr.innerHTML = `
                 <td>G20</td>
                 <td>840</td>
-                <td>${linha.realizacaoData}</td>
+                <td>${linha.realizacaoDataStr}</td>
                 <td>${linha.realizacaoValNum.toFixed(2)}</td>
-                <td>${linha.aquisicaoData}</td>
+                <td>${linha.aquisicaoDataStr}</td>
                 <td>${valAquisicaoHtml} ${alertaHtml}</td>
                 <td>${linha.despesasNum.toFixed(2)}</td>
                 <td>${linha.moeda}</td>
@@ -575,7 +612,9 @@
         const url = URL.createObjectURL(blob);
         
         const ano = document.getElementById('ano-irs').value;
-        const nomeFicheiro = `IRS_Cripto_${ano}_Modo_${modoAgrupado ? 'Agrupado' : 'Completo'}.csv`;
+        const modo = modoAgrupado ? 'Agrupado' : 'Completo';
+        const formatoData = document.getElementById('check-data-completa').checked ? 'Datas_Exatas' : 'Datas_Mes_Ano';
+        const nomeFicheiro = `IRS_Cripto_${ano}_${modo}_${formatoData}.csv`;
         
         link.setAttribute("href", url);
         link.setAttribute("download", nomeFicheiro);
