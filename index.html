@@ -31,7 +31,6 @@
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
 
-        /* Estilos do Validador */
         #painel-validacao { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 16px; }
         .validacao-ok { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
         .validacao-erro { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
@@ -142,7 +141,6 @@
     let relatorioIRSGlobal = []; 
     let modoAgrupado = false; 
     
-    // Variáveis para a Prova dos 9
     let somaRealizacaoBrutaRaw = 0;
     let somaDespesasRaw = 0;
     let totalLinhasRawVenda = 0;
@@ -274,10 +272,15 @@
 
         const gruposPorRefid = {};
         dadosGlobais.forEach(row => {
-            if(!gruposPorRefid[row.refid]) gruposPorRefid[row.refid] = [];
-            gruposPorRefid[row.refid].push(row);
+            // CORREÇÃO CRÍTICA DO BUG DAS DATAS:
+            // Combina o RefID com o Timestamp exato. Isto impede que recompensas de staking de semanas 
+            // diferentes se aglomerem num único bloco temporal, destruindo o FIFO.
+            const chaveGrupo = (row.refid && row.refid.trim() !== '') ? `${row.refid}_${row.time}` : `UNICO_${Math.random()}`;
+            if(!gruposPorRefid[chaveGrupo]) gruposPorRefid[chaveGrupo] = [];
+            gruposPorRefid[chaveGrupo].push(row);
         });
 
+        // Ordena os grupos pela data da sua transação
         const refidsOrdenados = Object.keys(gruposPorRefid).sort((a, b) => new Date(gruposPorRefid[a][0].time) - new Date(gruposPorRefid[b][0].time));
 
         let inventory = {};
@@ -285,7 +288,6 @@
         relatorioIRSGlobal = [];
         modoAgrupado = false; 
         
-        // Reset à auditoria
         somaRealizacaoBrutaRaw = 0;
         somaDespesasRaw = 0;
         totalLinhasRawVenda = 0;
@@ -314,7 +316,6 @@
 
                     if(!inventory[asset]) inventory[asset] = [];
 
-                    // Compra
                     if (cryptoAmount > 0 && eurAmount < 0) {
                         const rate = Math.abs(eurAmount) / cryptoAmount;
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
@@ -322,12 +323,10 @@
                         const pricePerUnit = totalPago / cryptoAmount;
                         inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                     }
-                    // Venda (Paga Cripto, Recebe EUR)
                     else if (cryptoAmount < 0 && eurAmount > 0) {
                         const rate = eurAmount / Math.abs(cryptoAmount);
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
 
-                        // REGISTO AUDITORIA DOS DADOS BRUTOS
                         if (time.getFullYear() === anoIrsDesejado) {
                             somaRealizacaoBrutaRaw += eurAmount;
                             somaDespesasRaw += totalFeeEur;
@@ -337,6 +336,10 @@
                         let qtyToSell = Math.abs(cryptoAmount);
                         const cryptoOriginalVendido = Math.abs(cryptoAmount);
                         const eurGrossTotal = eurAmount;
+
+                        // REDE DE SEGURANÇA FIFO: 
+                        // Forçamos a ordenação cronológica do baú antes de tirar qualquer fatia
+                        inventory[asset].sort((a, b) => a.date - b.date);
 
                         while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
@@ -376,7 +379,6 @@
                         }
                     }
                 } 
-                // Troca Cripto por Cripto
                 else if (cryptoRows.length >= 2) {
                     const rowSell = cryptoRows.find(r => parseFloat(r.amount) < 0);
                     const rowBuy = cryptoRows.find(r => parseFloat(r.amount) > 0);
@@ -392,6 +394,9 @@
                         let oldestDate = null;
 
                         if (!inventory[assetSell]) inventory[assetSell] = [];
+                        
+                        // Segurança FIFO
+                        inventory[assetSell].sort((a, b) => a.date - b.date);
 
                         let qtyRemaining = qtySell;
                         while (qtyRemaining > 1e-8 && inventory[assetSell].length > 0) {
@@ -431,6 +436,9 @@
                     if(!caixaForte[asset]) caixaForte[asset] = [];
 
                     if (amount < 0) {
+                        // Segurança FIFO
+                        inventory[asset].sort((a, b) => a.date - b.date);
+                        
                         let qtyToRemove = Math.abs(amount);
                         while (qtyToRemove > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
@@ -468,7 +476,6 @@
             }
         });
 
-        // EXECUTA A PROVA DOS 9 ANTES DE DESENHAR A TABELA
         validarCalculos(relatorioIRSGlobal);
         desenharTabela(relatorioIRSGlobal);
     }
@@ -484,7 +491,6 @@
             somaDespesasReport += linha.despesasNum;
         });
 
-        // Margem de erro de 2 cêntimos para diferenças de arredondamentos flutuantes
         const diffRealizacao = Math.abs(somaRealizacaoBrutaRaw - somaRealizacaoReport);
         const diffDespesas = Math.abs(somaDespesasRaw - somaDespesasReport);
 
@@ -495,7 +501,7 @@
             painelValidacao.innerHTML = `✅ <b>Prova dos 9 (Auditoria Interna): Sucesso Absoluto!</b><br>
                 <span style="font-weight: normal; font-size: 14px; display: block; margin-top: 8px;">
                 O motor encontrou <b>${totalLinhasRawVenda}</b> transações brutas de venda a Euros neste ano. 
-                Ao aplicar a regra FIFO, essas transações foram corretamente desdobradas em <b>${relatorioFinal.length}</b> linhas no relatório, sem que nenhum cêntimo se tenha perdido.<br><br>
+                Ao aplicar a regra FIFO cronológica, essas transações foram desdobradas em <b>${relatorioFinal.length}</b> linhas no relatório, sem falhas.<br><br>
                 <b>Reconciliação:</b><br>
                 Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b>
                 </span>`;
