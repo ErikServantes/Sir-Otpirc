@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Calculadora IRS Cripto Pro - Motor FIFO Rigoroso</title>
+    <title>Calculadora IRS Cripto Pro - Motor FIFO + Auditoria</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
     <style>
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; max-width: 1000px; margin: 40px auto; padding: 20px; background-color: #f5f5f5; color: #333; }
@@ -24,12 +24,17 @@
         .btn-calcular { background: #1a73e8; color: white; border: none; padding: 12px 25px; font-size: 16px; border-radius: 5px; cursor: pointer; font-weight: bold; display: block; margin: 10px auto 0 auto; }
         .btn-calcular:hover { background: #1557b0; }
         
-        .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 20px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
+        .resumo-fiscal { display: flex; justify-content: space-around; background-color: #1e1e1e; color: white; padding: 20px; border-radius: 8px; margin-top: 30px; margin-bottom: 15px; box-shadow: 0 4px 15px rgba(0,0,0,0.2); }
         .resumo-box { text-align: center; }
         .resumo-valor { font-size: 24px; font-weight: bold; margin-top: 5px; }
         .valor-positivo { color: #4ade80; }
         .valor-negativo { color: #f87171; }
         .valor-imposto { color: #fbbf24; }
+
+        /* Estilos do Validador */
+        #painel-validacao { padding: 15px; border-radius: 8px; margin-bottom: 20px; text-align: center; font-size: 16px; }
+        .validacao-ok { background-color: #d4edda; color: #155724; border: 1px solid #c3e6cb; }
+        .validacao-erro { background-color: #f8d7da; color: #721c24; border: 1px solid #f5c6cb; }
 
         .header-tabela { border-bottom: 2px solid #1a73e8; padding-bottom: 10px; display: flex; justify-content: space-between; align-items: flex-end; margin-top: 10px; }
         .header-tabela h2 { margin: 0; }
@@ -99,6 +104,8 @@
             </div>
         </div>
 
+        <div id="painel-validacao" class="hidden"></div>
+
         <div class="area-botoes-tabela">
             <button id="btn-agrupar" class="btn-agrupar" onclick="alternarAgrupamento()">🗜️ Agrupar Linhas (Modo Finanças)</button>
             <button id="btn-copiar" class="btn-copiar" onclick="copiarTabela()">📋 Copiar Tabela</button>
@@ -135,6 +142,11 @@
     let relatorioIRSGlobal = []; 
     let modoAgrupado = false; 
     
+    // Variáveis para a Prova dos 9
+    let somaRealizacaoBrutaRaw = 0;
+    let somaDespesasRaw = 0;
+    let totalLinhasRawVenda = 0;
+
     const dropZone = document.getElementById('drop-zone');
     const fileInput = document.getElementById('file-input');
 
@@ -272,6 +284,12 @@
         let caixaForte = {};
         relatorioIRSGlobal = [];
         modoAgrupado = false; 
+        
+        // Reset à auditoria
+        somaRealizacaoBrutaRaw = 0;
+        somaDespesasRaw = 0;
+        totalLinhasRawVenda = 0;
+
         document.getElementById('btn-agrupar').innerHTML = "🗜️ Agrupar Linhas (Modo Finanças)";
         document.getElementById('btn-agrupar').style.background = "#34a853";
 
@@ -296,7 +314,7 @@
 
                     if(!inventory[asset]) inventory[asset] = [];
 
-                    // Compra Cripto (Paga EUR, Recebe Cripto)
+                    // Compra
                     if (cryptoAmount > 0 && eurAmount < 0) {
                         const rate = Math.abs(eurAmount) / cryptoAmount;
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
@@ -304,32 +322,36 @@
                         const pricePerUnit = totalPago / cryptoAmount;
                         inventory[asset].push({ amount: cryptoAmount, price: pricePerUnit, date: time, origin: 'Compra Fiat' });
                     }
-                    // Venda Cripto (Paga Cripto, Recebe EUR) - ONDE A MAGIA ACONTECE (DESDOBRAMENTO)
+                    // Venda (Paga Cripto, Recebe EUR)
                     else if (cryptoAmount < 0 && eurAmount > 0) {
                         const rate = eurAmount / Math.abs(cryptoAmount);
                         const totalFeeEur = rawFeeEur + (rawFeeCrypto * rate);
 
+                        // REGISTO AUDITORIA DOS DADOS BRUTOS
+                        if (time.getFullYear() === anoIrsDesejado) {
+                            somaRealizacaoBrutaRaw += eurAmount;
+                            somaDespesasRaw += totalFeeEur;
+                            totalLinhasRawVenda++;
+                        }
+
                         let qtyToSell = Math.abs(cryptoAmount);
-                        const cryptoOriginalVendido = Math.abs(cryptoAmount); // Guardado para fazer a proporção
+                        const cryptoOriginalVendido = Math.abs(cryptoAmount);
                         const eurGrossTotal = eurAmount;
 
-                        // Desdobramento: Processamos lote a lote até abater tudo o que foi vendido
                         while (qtyToSell > 1e-8 && inventory[asset].length > 0) {
                             let lote = inventory[asset][0];
                             let qtyConsumidaNesteLote = 0;
 
                             if (lote.amount <= qtyToSell) {
                                 qtyConsumidaNesteLote = lote.amount;
-                                inventory[asset].shift(); // Remove lote esgotado
+                                inventory[asset].shift();
                             } else {
                                 qtyConsumidaNesteLote = qtyToSell;
-                                lote.amount -= qtyToSell; // Atualiza o que sobra no lote
+                                lote.amount -= qtyToSell;
                             }
 
-                            // 1. Calcular a percentagem desta venda que corresponde a este lote
                             const proporcao = qtyConsumidaNesteLote / cryptoOriginalVendido;
-
-                            // 2. Distribuir os valores de Realização e Custos proporcionalmente
+                            
                             const grossEurDesdobrado = eurGrossTotal * proporcao;
                             const feeEurDesdobrado = totalFeeEur * proporcao;
                             const costBasisDesdobrado = qtyConsumidaNesteLote * lote.price;
@@ -338,7 +360,7 @@
                                 relatorioIRSGlobal.push({
                                     realizacaoDataStr: formatarData(time),
                                     realizacaoValNum: grossEurDesdobrado,
-                                    aquisicaoDataStr: formatarData(lote.date), // USA A DATA EXATA DESTE LOTE!
+                                    aquisicaoDataStr: formatarData(lote.date),
                                     aquisicaoValNum: costBasisDesdobrado,
                                     despesasNum: feeEurDesdobrado,
                                     moeda: asset,
@@ -371,12 +393,10 @@
 
                         if (!inventory[assetSell]) inventory[assetSell] = [];
 
-                        // Como as trocas cripto-cripto não geram linha no IRS em Portugal (são isentas no momento da troca),
-                        // nós apenas consumimos as fatias antigas e transferimos o custo/data média para a nova cripto
                         let qtyRemaining = qtySell;
                         while (qtyRemaining > 1e-8 && inventory[assetSell].length > 0) {
                             let lote = inventory[assetSell][0];
-                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date; // Preserva antiguidade da carteira
+                            if (!oldestDate || lote.date < oldestDate) oldestDate = lote.date; 
 
                             if (lote.amount <= qtyRemaining) {
                                 costBasisEur += lote.amount * lote.price;
@@ -448,7 +468,46 @@
             }
         });
 
+        // EXECUTA A PROVA DOS 9 ANTES DE DESENHAR A TABELA
+        validarCalculos(relatorioIRSGlobal);
         desenharTabela(relatorioIRSGlobal);
+    }
+
+    function validarCalculos(relatorioFinal) {
+        const painelValidacao = document.getElementById('painel-validacao');
+        
+        let somaRealizacaoReport = 0;
+        let somaDespesasReport = 0;
+        
+        relatorioFinal.forEach(linha => {
+            somaRealizacaoReport += linha.realizacaoValNum;
+            somaDespesasReport += linha.despesasNum;
+        });
+
+        // Margem de erro de 2 cêntimos para diferenças de arredondamentos flutuantes
+        const diffRealizacao = Math.abs(somaRealizacaoBrutaRaw - somaRealizacaoReport);
+        const diffDespesas = Math.abs(somaDespesasRaw - somaDespesasReport);
+
+        painelValidacao.classList.remove('hidden');
+
+        if (diffRealizacao < 0.02 && diffDespesas < 0.02) {
+            painelValidacao.className = "validacao-ok";
+            painelValidacao.innerHTML = `✅ <b>Prova dos 9 (Auditoria Interna): Sucesso Absoluto!</b><br>
+                <span style="font-weight: normal; font-size: 14px; display: block; margin-top: 8px;">
+                O motor encontrou <b>${totalLinhasRawVenda}</b> transações brutas de venda a Euros neste ano. 
+                Ao aplicar a regra FIFO, essas transações foram corretamente desdobradas em <b>${relatorioFinal.length}</b> linhas no relatório, sem que nenhum cêntimo se tenha perdido.<br><br>
+                <b>Reconciliação:</b><br>
+                Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b>
+                </span>`;
+        } else {
+            painelValidacao.className = "validacao-erro";
+            painelValidacao.innerHTML = `❌ <b>Prova dos 9 (Auditoria Interna): Inconsistência Detetada!</b><br>
+                <span style="font-weight: normal; font-size: 14px; display: block; margin-top: 8px;">
+                Os dados reportados no Anexo J não batem certo com a soma crua dos ficheiros originais. Isto ocorre quando moedas são vendidas sem nunca terem dado entrada (depósito/compra).<br><br>
+                <b>Reconciliação:</b><br>
+                Vendas Originais Brutas: <b>${somaRealizacaoBrutaRaw.toFixed(2)} €</b> ➡️ Anexo J Gerado: <b>${somaRealizacaoReport.toFixed(2)} €</b>
+                </span>`;
+        }
     }
 
     function alternarAgrupamento() {
